@@ -3,10 +3,10 @@
 package chisel3.debuginternal
 
 // This package contains internal implementation for CIRCT debug metadata intrinsics.
-// User-facing API is in chisel3.util.circt.Debug
+// User-facing API is in chisel3.util.circt.DebugInfo
 
 import chisel3._
-import chisel3.experimental.SourceInfo
+import chisel3.experimental.{Param, SourceInfo, StringParam, IntParam}
 import scala.collection.immutable.ListMap
 
 /**
@@ -57,7 +57,7 @@ object DebugIntrinsic {
     val sourceLine = sourceInfo.line.toLong
     
     // Build parameter list for intrinsic
-    val intrinsicParams = Seq(
+    val intrinsicParams: Seq[(String, Param)] = Seq(
       "target" -> StringParam(target),
       "typeName" -> StringParam(typeName),
       "binding" -> StringParam(binding),
