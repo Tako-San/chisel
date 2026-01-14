@@ -9,7 +9,7 @@ import circt.stage.ChiselStage
 /**
   * Example Bundle with constructor parameters
   */
-class Counter Bundle(val width: Int) extends Bundle {
+class CounterBundle(val width: Int) extends Bundle {
   val value = UInt(width.W)
   val enable = Bool()
 }
