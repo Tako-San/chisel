@@ -87,15 +87,15 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
   }
   
   it should "extract Bundle constructor parameters" in {
-    class ParametricBundle(val width: Int, val depth: Int) extends Bundle {
-      val data = UInt(width.W)
+    class ParametricBundle(val dataWidth: Int, val depth: Int) extends Bundle {
+      val data = UInt(dataWidth.W)
       val valid = Bool()
     }
     
     val bundle = new ParametricBundle(32, 1024)
     val params = DebugIntrinsic.extractBundleParams(bundle)
     
-    params should contain("width" -> "32")
+    params should contain("dataWidth" -> "32")
     params should contain("depth" -> "1024")
   }
   
