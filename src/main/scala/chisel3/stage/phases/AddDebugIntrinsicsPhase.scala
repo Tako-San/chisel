@@ -4,7 +4,7 @@ package chisel3.stage.phases
 
 import chisel3._
 import chisel3.stage.{ChiselOptions, CircuitSerializationAnnotation}
-import chisel3.experimental.{BaseModule, SourceInfo}
+import chisel3.experimental.{BaseModule, SourceInfo, UnlocatableSourceInfo}
 import chisel3.debuginternal.DebugIntrinsic
 import firrtl.annotations.{Annotation, NoTargetAnnotation}
 import firrtl.options.{Dependency, Phase, StageOptions}
@@ -99,10 +99,8 @@ class AddDebugIntrinsicsPhase extends Phase {
     * direct API for iterating components in Chisel 6+
     */
   private def processModule(module: BaseModule): Unit = {
-    implicit val sourceInfo: SourceInfo = module match {
-      case m: Module => implicitly[SourceInfo]
-      case _ => chisel3.experimental.UnlocatableSourceInfo
-    }
+    // Create implicit SourceInfo for intrinsic generation
+    implicit val si: SourceInfo = UnlocatableSourceInfo
     
     val moduleName = module.name
     
