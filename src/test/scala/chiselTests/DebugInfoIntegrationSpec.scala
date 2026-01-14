@@ -19,9 +19,9 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
   it should "preserve type info through full compilation" in {
     sys.props("chisel.debug") = "true"
     
-    class CompleteBundle(val width: Int) extends Bundle {
+    class CompleteBundle(val dataWidth: Int) extends Bundle {
       val valid = Bool()
-      val data = UInt(width.W)
+      val data = UInt(dataWidth.W)
     }
     
     class IntegrationModule extends Module {
@@ -57,7 +57,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     
     // Verify Bundle parameters captured
     firrtl should include("typeName = \"CompleteBundle\"")
-    firrtl should include("parameters = \"width=16\"")
+    firrtl should include("parameters = \"dataWidth=16\"")
     
     // Verify source locations present
     firrtl should include("sourceFile")
