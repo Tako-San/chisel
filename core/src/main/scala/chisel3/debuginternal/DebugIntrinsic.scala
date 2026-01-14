@@ -6,7 +6,7 @@ package chisel3.debuginternal
 // User-facing API is in chisel3.util.circt.DebugInfo
 
 import chisel3._
-import chisel3.experimental.{Param, SourceInfo, StringParam, IntParam}
+import chisel3.experimental.SourceInfo
 import scala.collection.immutable.ListMap
 
 /**
