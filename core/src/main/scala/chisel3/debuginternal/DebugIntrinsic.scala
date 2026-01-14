@@ -121,15 +121,19 @@ object DebugIntrinsic {
   
   /**
     * Extract type name from Data element
+    * 
+    * NOTE: Order matters! Check subtypes before supertypes:
+    * - Bool before UInt (Bool extends UInt)
+    * - AsyncReset before Reset (AsyncReset extends Reset)
     */
   def extractTypeName(data: Data): String = {
     data match {
+      case _: Bool => "Bool"         // Must be before UInt!
       case _: UInt => "UInt"
       case _: SInt => "SInt"
-      case _: Bool => "Bool"
       case _: Clock => "Clock"
+      case _: AsyncReset => "AsyncReset"  // Must be before Reset!
       case _: Reset => "Reset"
-      case _: AsyncReset => "AsyncReset"
       case v: Vec[_] => "Vec"
       case e: EnumType => 
         e.factory.getClass.getSimpleName.stripSuffix("$").stripSuffix("Type")
