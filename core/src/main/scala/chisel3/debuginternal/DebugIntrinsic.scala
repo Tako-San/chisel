@@ -54,7 +54,10 @@ object DebugIntrinsic {
     val typeName = extractTypeName(data)
     val params = extractAllParams(data)
     val sourceFile = sourceInfo.filenameOption.getOrElse("<unknown>")
-    val sourceLine = sourceInfo.line.toLong
+    val sourceLine = sourceInfo match {
+      case s: chisel3.experimental.SourceLine => s.line.toLong
+      case _ => 0L
+    }
     
     // Build parameter list for intrinsic
     val intrinsicParams: Seq[(String, Param)] = Seq(
@@ -197,9 +200,9 @@ object DebugIntrinsic {
   /**
     * Extract enum definition as "0:IDLE,1:RUN,2:DONE" format
     */
-  def extractEnumDef(enum: EnumType): String = {
+  def extractEnumDef(`enum`: EnumType): String = {
     try {
-      val allValues = enum.factory.all
+      val allValues = `enum`.factory.all
       
       allValues.map { e =>
         s"${e.litValue}:${e.toString}"
@@ -207,7 +210,7 @@ object DebugIntrinsic {
     } catch {
       case _: Exception => 
         // Fallback: just use the current value
-        s"${enum.litValue}:${enum.toString}"
+        s"${`enum`.litValue}:${`enum`.toString}"
     }
   }
   
