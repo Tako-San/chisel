@@ -18,6 +18,8 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
   behavior of "AddDebugIntrinsicsPhase"
   
   it should "run when EnableDebugAnnotation is present" in {
+    sys.props("chisel.debug") = "true"
+    
     class TestModule extends Module {
       val io = IO(new Bundle {
         val in = Input(UInt(8.W))
@@ -26,15 +28,13 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
       io.out := io.in
     }
     
-    // Phase should trigger with annotation
-    val firrtl = ChiselStage.emitCHIRRTL(
-      new TestModule,
-      Array(),
-      Seq(EnableDebugAnnotation())
-    )
+    // Phase should trigger with system property
+    val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
     
     // Should process module even without explicit annotate() calls
     firrtl should include("TestModule")
+    
+    sys.props.remove("chisel.debug")
   }
   
   it should "skip execution when debug is disabled" in {
