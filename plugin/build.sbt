@@ -1,16 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// Chisel Debug Intrinsics Compiler Plugin
+// Automatically instruments Chisel code with debug metadata
+
 name := "chisel-debug-plugin"
+version := "0.1.0-SNAPSHOT"
+scalaVersion := "2.13.12"
 
 libraryDependencies ++= Seq(
-  "org.scala-lang" % "scala-compiler" % scalaVersion.value,
-  "org.scala-lang" % "scala-reflect" % scalaVersion.value
+  // Scala compiler API
+  "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+  
+  // Chisel (for type detection)
+  "org.chipsalliance" %% "chisel" % "6.0.0" % "provided",
+  
+  // Testing
+  "org.scalatest" %% "scalatest" % "3.2.17" % Test,
+  "org.scalacheck" %% "scalacheck" % "1.17.0" % Test
 )
 
-// Chisel is provided (will be on classpath when plugin is used)
-libraryDependencies += "org.chipsalliance" %% "chisel" % "6.0.0" % "provided"
+// Compiler plugin packaging
+Package.ManifestAttributes("Class-Path" -> "scala-compiler.jar")
 
-// Package as compiler plugin
-exportJars := true
+// Generate plugin descriptor XML
+ResourceGenerators.in(Compile) += Def.task {
+  val file = (resourceManaged in Compile).value / "scalac-plugin.xml"
+  IO.write(file,
+    s"""<plugin>
+       |  <name>chisel-debug</name>
+       |  <classname>chisel3.debug.plugin.DebugIntrinsicsPlugin</classname>
+       |</plugin>
+       |""".stripMargin
+  )
+  Seq(file)
+}.taskValue
 
-// Add scalac-plugin.xml to resources (already in src/main/resources)
+// Export as JAR
+assemblyOption in assembly := (assemblyOption in assembly).value.copy(
+  includeScala = false,
+  includeDependency = false
+)
