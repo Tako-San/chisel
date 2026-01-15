@@ -26,7 +26,8 @@ Chisel (this implementation)
 | **Internal Implementation** | ✅ Complete | `chisel3.debuginternal.DebugIntrinsic` |
 | **Probe API Integration** | ✅ Complete | P2 fix applied |
 | **Compiler Phase** | ✅ Complete | `chisel3.stage.phases.AddDebugIntrinsicsPhase` |
-| **Test Coverage** | ✅ 55+ tests | 5 test suites |
+| **Error Handling** | ✅ Robust | No silent failures |
+| **Test Coverage** | ✅ 65+ tests | 6 test suites |
 | **Documentation** | ✅ Complete | This README + code examples |
 
 ---
@@ -114,6 +115,7 @@ sbt "testOnly chiselTests.Debug*Spec"
 sbt "testOnly chiselTests.DebugInfoSpec"                    # User API
 sbt "testOnly chiselTests.DebugIntrinsicSpec"              # Probe API + core
 sbt "testOnly chiselTests.DebugParameterSerializationSpec"  # Format validation
+sbt "testOnly chiselTests.DebugPhaseErrorHandlingSpec"      # Error handling
 sbt "testOnly chiselTests.AddDebugIntrinsicsPhaseSpec"      # Phase integration
 sbt "testOnly chiselTests.DebugInfoIntegrationSpec"        # E2E tests
 ```
@@ -226,7 +228,59 @@ Map("width" -> "32", "depth" -> "1024")
 
 ---
 
-## 🧪 Test Coverage (55+ Tests)
+## ⚡ Robust Error Handling
+
+### Error Classification
+
+| Error Type | Handling | When |
+|------------|----------|------|
+| **NoSuchMethodException** | ❌ FATAL (throw) | Chisel API changed (method removed/renamed) |
+| **IllegalAccessException** | ❌ FATAL (throw) | Access modifiers changed |
+| **ClassCastException** | ❌ FATAL (throw) | Return type changed |
+| **NoSuchFieldException (IO)** | ⚠️ WARNING (log) | Module has no IO (expected for RawModule) |
+| **General Exception** | ❌ FATAL (throw + trace) | Unexpected error |
+
+### Error Message Quality
+
+Every error includes:
+- ✅ **Context**: What operation failed
+- ✅ **Expected vs Actual**: API mismatch details
+- ✅ **Available alternatives**: List of actual methods/fields
+- ✅ **Recovery steps**: Specific actions to fix
+- ✅ **Error details**: Original exception message
+
+### Example: API Incompatibility
+
+**Before (Silent Failure):**
+```
+[Chisel Debug] Warning: Could not access .circuit
+```
+
+**After (Actionable Error):**
+```
+[Chisel Debug] FATAL ERROR: ChiselCircuitAnnotation API incompatibility.
+  Expected method: circuit()
+  Available methods: getCircuit, topModule, annotations
+  
+  REQUIRED ACTION:
+  Update AddDebugIntrinsicsPhase to match current Chisel API.
+  Check ChiselCircuitAnnotation source for correct accessor.
+  
+  Error details: java.lang.NoSuchMethodException: circuit()
+
+Exception in thread "main" java.lang.RuntimeException: Debug phase failed
+```
+
+### Why This Matters
+
+1. **No Silent Failures**: API changes detected immediately
+2. **Actionable**: Developer knows exactly what to fix
+3. **Self-Documenting**: Error messages guide code updates
+4. **Maintainable**: Future Chisel versions easier to support
+
+---
+
+## 🧪 Test Coverage (65+ Tests)
 
 ### Test Suites
 
@@ -247,13 +301,19 @@ Map("width" -> "32", "depth" -> "1024")
 - Special character handling
 - Enum definition format
 
-**4. AddDebugIntrinsicsPhaseSpec (10 tests)**
+**4. DebugPhaseErrorHandlingSpec (10 tests)** [NEW]
+- **Error handling validation** (CRITICAL: no silent failures)
+- RawModule (no IO) handled gracefully
+- Fatal vs warning distinction
+- Error message quality validation
+
+**5. AddDebugIntrinsicsPhaseSpec (10 tests)**
 - Phase triggering
 - Automatic IO processing
 - Phase ordering
 - Multi-module hierarchies
 
-**5. DebugInfoIntegrationSpec (10+ tests)**
+**6. DebugInfoIntegrationSpec (10+ tests)**
 - Full Chisel→FIRRTL pipeline
 - Complex nested structures
 - ChiselEnum integration
@@ -265,6 +325,7 @@ Map("width" -> "32", "depth" -> "1024")
 - ✅ CANARY tests: fail loudly if `ProbeValue()` removed
 - ✅ Probe API validation: checks `Probe<T>`, `define()`, `read()`
 - ✅ Parameter format validation: round-trip parsing
+- ✅ Error handling validation: verifies no silent failures
 
 ---
 
@@ -344,7 +405,8 @@ void exportDebugInfo(mlir::ModuleOp module, llvm::raw_ostream &os) {
 2. **Zero-cost abstraction** - No overhead when disabled
 3. **Reflection-based Bundle params** - No manual annotations needed
 4. **ChiselEnum serialization** - Full enum metadata preserved
-5. **Comprehensive test coverage** - 55+ tests with regression guards
+5. **Robust error handling** - No silent failures, actionable errors
+6. **Comprehensive test coverage** - 65+ tests with regression guards
 
 ### Thesis Structure
 
@@ -352,11 +414,13 @@ void exportDebugInfo(mlir::ModuleOp module, llvm::raw_ostream &os) {
 - 3.1: User API design (annotate, recursive traversal)
 - 3.2: **Probe API binding** (core innovation)
 - 3.3: Compiler integration (phase ordering)
+- 3.4: **Error handling** (robustness)
 
 **Chapter 4: Validation**
-- 4.1: Test methodology (regression guards)
+- 4.1: Test methodology (regression guards, error path testing)
 - 4.2: Performance benchmarks
 - 4.3: CIRCT compatibility validation
+- 4.4: Robustness analysis (error handling)
 
 **Chapter 5: Future Work**
 - 5.1: CIRCT lowering implementation
@@ -406,6 +470,19 @@ val reg = RegInit(0.U(8.W))
 DebugInfo.annotate(reg, "myReg")  // Annotate Reg, not wire
 ```
 
+### API Incompatibility Errors?
+
+**If you see:**
+```
+[Chisel Debug] FATAL ERROR: ChiselCircuitAnnotation API incompatibility
+```
+
+**Action:**
+1. Check error message for "REQUIRED ACTION" section
+2. Compare available methods with expected methods
+3. Update `AddDebugIntrinsicsPhase.scala` accordingly
+4. Submit PR or issue to update for new Chisel API
+
 ---
 
 ## ✅ Definition of Done
@@ -414,9 +491,11 @@ DebugInfo.annotate(reg, "myReg")  // Annotate Reg, not wire
 - [x] Probe API integration (P2 fix)
 - [x] Internal implementation complete
 - [x] Compiler phase integrated
-- [x] 55+ tests passing (5 suites)
+- [x] Robust error handling (no silent failures)
+- [x] 65+ tests passing (6 suites)
 - [x] Regression guards in place
 - [x] Parameter format validated
+- [x] Error paths tested
 - [x] Example demonstrating workflow
 - [x] Complete documentation
 
