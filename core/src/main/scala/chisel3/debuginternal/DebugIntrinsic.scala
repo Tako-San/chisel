@@ -14,25 +14,36 @@ import scala.collection.immutable.ListMap
   * Generates CIRCT debug intrinsics for preserving high-level type information
   * through FIRRTL compilation.
   * 
+  * == Architecture ==
+  * 
   * Uses Chisel 6+ Probe API for reliable signal binding:
-  *   1. ProbeValue(signal) creates persistent reference
-  *   2. Intrinsic consumes probe, creating metadata→RTL dependency
-  *   3. CIRCT tracks probe through transforms, maintaining mapping
+  *   1. `ProbeValue(signal)` creates persistent reference tracking signal identity
+  *   2. Intrinsic consumes probe via `read()`, creating metadata→RTL dependency
+  *   3. CIRCT tracks probe through transforms, maintaining accurate mapping
   * 
   * These intrinsics are lowered by CIRCT's Debug dialect to:
-  * - dbg.* MLIR operations (dbg.struct, dbg.variable, etc.)
-  * - hw-debug-info.json manifest
+  * - `dbg.*` MLIR operations (dbg.struct, dbg.variable, etc.)
+  * - `hw-debug-info.json` manifest for runtime tools
   * - VCD/FST metadata for waveform viewers
   * 
+  * == Design Pattern ==
+  * 
   * Architecture follows ChiselTrace approach:
-  * - Probe-based references survive optimization passes
-  * - Metadata stays bound to actual RTL signal after transforms
-  * - Enables Tywaves/HGDB to correlate VCD signals with source types
+  * - Probe-based references survive optimization passes (DCE, CSE, inlining)
+  * - Metadata stays bound to actual RTL signal after FIRRTL transforms
+  * - Enables Tywaves/HGDB to correlate VCD signals with Chisel source types
+  * 
+  * @note This is internal API - users should use [[chisel3.util.circt.DebugInfo]]
+  * @see [[https://www.chisel-lang.org/docs/explanations/probes Chisel Probe API]]
+  * @see [[https://circt.llvm.org/docs/Dialects/Debug/ CIRCT Debug Dialect]]
+  * @see [[https://github.com/jarlb ChiselTrace (reference implementation)]]
   */
 object DebugIntrinsic {
   
   /**
-    * Check if Chisel debug mode is enabled via environment variable
+    * Check if Chisel debug mode is enabled via environment variable.
+    * 
+    * @return true if `CHISEL_DEBUG=true` or `sys.props("chisel.debug")="true"`
     */
   def isEnabled: Boolean = {
     sys.env.get("CHISEL_DEBUG").exists(_.toLowerCase == "true") ||
@@ -43,21 +54,43 @@ object DebugIntrinsic {
     * Emit a debug intrinsic for a Data element.
     * 
     * Generates a FIRRTL intrinsic statement with Probe-based binding:
-    *   wire _probe = probe(io.field)
-    *   intrinsic(circt_debug_typeinfo<target="io.field", ...>, read(_probe))
+    * {{{  
+    * wire _probe_io_field : Probe<UInt<8>>
+    * define(_probe_io_field, probe(io.field))
+    * intrinsic(circt_debug_typeinfo<target="io.field", ...>, read(_probe_io_field))
+    * }}}
     * 
-    * CRITICAL: Uses Probe API to create persistent signal reference.
-    * - ProbeValue(data): creates probe reference to signal
-    * - read(probe): dereferences probe for intrinsic consumption
-    * - CIRCT tracks probe through transforms, preserving metadata binding
+    * == Critical Design Decision: Probe API (P2 Fix) ==
     * 
-    * This solves the "dangling reference" problem where optimizations
-    * rename/eliminate signals, breaking metadata→RTL correspondence.
+    * '''Why Probe API is required:'''
     * 
-    * @param data The signal to attach metadata to
+    * Direct signal reference creates weak dependency:
+    * {{{  
+    * // BAD: Weak binding (deprecated approach)
+    * Intrinsic("circt_debug_typeinfo", params)(data)
+    * // Problem: FIRRTL transforms may rename/eliminate 'data'
+    * // Result: Intrinsic parameter 'target="io.field"' becomes stale string
+    * // Impact: CIRCT cannot map metadata to final RTL signal
+    * }}}
+    * 
+    * Probe-based reference persists through transforms:
+    * {{{  
+    * // GOOD: Strong binding (current implementation)
+    * val probe = ProbeValue(data)
+    * val probeRead = read(probe)
+    * Intrinsic("circt_debug_typeinfo", params)(probeRead)
+    * // Benefit: Probe tracks signal identity through all transforms
+    * // Result: metadata→RTL mapping survives DCE, CSE, inlining
+    * }}}
+    * 
+    * @param data The signal to attach metadata to (must be hardware-typed)
     * @param target Hierarchical name (e.g., "io.field1.subfield")
-    * @param binding Signal binding type ("IO", "Wire", "Reg", "OpResult")
-    * @return Some(Unit) if intrinsic was emitted, None if disabled
+    * @param binding Signal binding type ("IO", "Wire", "Reg", "OpResult", "User")
+    * @param sourceInfo Source location (file name, line number)
+    * @return Some(Unit) if intrinsic was emitted, None if debug mode disabled
+    * 
+    * @note When debug mode is disabled, returns None with zero overhead
+    * @see [[emitRecursive]] for Bundle/Vec traversal
     */
   def emit(
     data: Data, 
@@ -120,8 +153,27 @@ object DebugIntrinsic {
   
   /**
     * Recursively emit intrinsics for a Data element and all its children.
-    * For Bundles: emits for bundle itself + all fields.
+    * 
+    * For Bundles: emits for bundle itself + all fields (depth-first traversal).
     * For Vecs: emits for vec itself (elements handled separately if needed).
+    * For ground types: emits single intrinsic (no children).
+    * 
+    * @param data The root signal to annotate recursively
+    * @param target Hierarchical name prefix (children will be suffixed)
+    * @param binding Signal binding type
+    * @param sourceInfo Source location
+    * @return Some(Unit) if any intrinsics emitted, None if disabled
+    * 
+    * @example Bundle traversal:
+    * {{{  
+    * // Input: Bundle { field1: UInt, field2: Bool }
+    * emitRecursive(bundle, "io", "IO")
+    * 
+    * // Generates:
+    * // - intrinsic for "io" (Bundle)
+    * // - intrinsic for "io.field1" (UInt)
+    * // - intrinsic for "io.field2" (Bool)
+    * }}}
     */
   def emitRecursive(
     data: Data,
@@ -155,11 +207,23 @@ object DebugIntrinsic {
   /**
     * Extract type name from Data element.
     * 
-    * P0 FIX: Explicit type guards prevent subtype mis-classification:
+    * == P0 FIX: Explicit Type Guards ==
+    * 
+    * Type guards prevent subtype mis-classification:
     * - Bool extends UInt, so check Bool first with guard
     * - AsyncReset extends Reset, so check AsyncReset first with guard
     * 
     * Without guards, reordering cases would break Bool/AsyncReset detection.
+    * 
+    * == Scala Artifact Cleaning ==
+    * 
+    * Removes Scala compiler artifacts from type names:
+    * - Inner class suffixes: `MyBundle$1` → `MyBundle`
+    * - Enum type suffix: `StateType` → `State`
+    * - Trailing dollar: `State$` → `State`
+    * 
+    * @param data The Data element to extract type name from
+    * @return Clean type name (e.g., "UInt", "MyBundle", "MyEnum")
     */
   def extractTypeName(data: Data): String = {
     data match {
@@ -193,7 +257,12 @@ object DebugIntrinsic {
   }
   
   /**
-    * Extract all type-specific parameters as key-value map
+    * Extract all type-specific parameters as key-value map.
+    * 
+    * Parameters are serialized as `"key1=val1;key2=val2"` for CIRCT consumption.
+    * 
+    * @param data The Data element to extract parameters from
+    * @return Map of parameter name to value (e.g., Map("width" -> "8"))
     */
   def extractAllParams(data: Data): Map[String, String] = {
     data match {
@@ -219,9 +288,22 @@ object DebugIntrinsic {
   /**
     * Extract constructor parameters from Bundle using reflection.
     * 
-    * IMPROVEMENT: Fallback to element inspection for anonymous Bundles:
-    *   val io = IO(new Bundle { val data = UInt(8.W) })
-    * These have no constructor params but still have meaningful structure.
+    * Uses Java reflection to access Bundle constructor parameters and their
+    * current values. Falls back to element-based structure for anonymous Bundles.
+    * 
+    * @param bundle The Bundle instance to extract parameters from
+    * @return Map of parameter names to values (e.g., Map("width" -> "32"))
+    * 
+    * @example Parametric Bundle:
+    * {{{  
+    * class MyBundle(val width: Int, val depth: Int) extends Bundle {
+    *   val data = UInt(width.W)
+    * }
+    * 
+    * val b = new MyBundle(32, 1024)
+    * extractBundleParams(b)
+    * // Returns: Map("width" -> "32", "depth" -> "1024")
+    * }}}
     */
   def extractBundleParams(bundle: Bundle): Map[String, String] = {
     try {
@@ -259,7 +341,14 @@ object DebugIntrinsic {
   
   /**
     * Fallback: extract Bundle structure from elements.
-    * Used for anonymous Bundles that have no constructor parameters.
+    * 
+    * Used for anonymous Bundles that have no constructor parameters:
+    * {{{  
+    * val io = IO(new Bundle { val data = UInt(8.W) })
+    * }}}
+    * 
+    * @param bundle Bundle instance
+    * @return Map of field names to type names (e.g., Map("data" -> "UInt"))
     */
   private def fallbackBundleParams(bundle: Bundle): Map[String, String] = {
     bundle.elements.map { case (name, field) =>
@@ -270,15 +359,31 @@ object DebugIntrinsic {
   /**
     * Extract enum definition as "0:EnumName(0=IDLE),1:EnumName(1=RUN)" format.
     * 
-    * IMPROVEMENT: Clean enum value names:
-    * - Remove package prefixes ("chisel3.ChiselEnum$sIDLE$" -> "IDLE")
-    * - Remove Scala compiler artifacts ($, Type suffixes)
-    * - Smart 's' prefix removal: only strip when followed by uppercase (Scala convention)
-    *   Examples:
-    *     "sIDLE" -> "IDLE" (Scala artifact, remove)
-    *     "sRUN" -> "RUN" (Scala artifact, remove)
-    *     "sleep" -> "sleep" (user-defined name, keep)
-    *     "start" -> "start" (user-defined name, keep)
+    * == Scala Artifact Cleaning ==
+    * 
+    * Cleans enum value names with smart 's' prefix handling:
+    * - Scala compiler generates: `sIDLE$`, `sRUN$` (with 's' prefix)
+    * - Only strips 's' before uppercase (Scala naming convention)
+    * - Preserves user-defined names: "sleep", "start"
+    * 
+    * Examples:
+    * - `"sIDLE"` → `"IDLE"` (Scala artifact, clean)
+    * - `"sRUN"` → `"RUN"` (Scala artifact, clean)
+    * - `"sleep"` → `"sleep"` (user-defined, preserve)
+    * - `"start"` → `"start"` (user-defined, preserve)
+    * 
+    * @param enum EnumType instance
+    * @return Serialized enum definition for CIRCT consumption
+    * 
+    * @example ChiselEnum:
+    * {{{  
+    * object State extends ChiselEnum {
+    *   val IDLE, RUN, DONE = Value
+    * }
+    * 
+    * extractEnumDef(State.IDLE)
+    * // Returns: "0:State(0=IDLE),1:State(1=RUN),2:State(2=DONE)"
+    * }}}
     */
   def extractEnumDef(`enum`: EnumType): String = {
     try {
@@ -308,7 +413,12 @@ object DebugIntrinsic {
   }
   
   /**
-    * Serialize parameter map as "key1=value1;key2=value2"
+    * Serialize parameter map as "key1=value1;key2=value2".
+    * 
+    * Format is designed for CIRCT parsing compatibility.
+    * 
+    * @param params Parameter map
+    * @return Serialized string (e.g., "width=8;depth=1024")
     */
   private def serializeParams(params: Map[String, String]): String = {
     params.map { case (k, v) => s"$k=$v" }.mkString(";")
