@@ -29,7 +29,8 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
     // Phase should trigger with annotation
     val firrtl = ChiselStage.emitCHIRRTL(
       new TestModule,
-      Array("--enable-debug-intrinsics")
+      Array(),
+      Seq(EnableDebugAnnotation())
     )
     
     // Should process module even without explicit annotate() calls
@@ -71,6 +72,8 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
     // Phase should auto-annotate IO
     firrtl should include("circt_debug_typeinfo")
     firrtl should include("target = \"io\"")
+    // Should see fields as well if recursive
+    firrtl should include("target = \"io.a\"")
     
     sys.props.remove("chisel.debug")
   }
