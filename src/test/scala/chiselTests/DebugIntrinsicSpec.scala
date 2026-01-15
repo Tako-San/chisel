@@ -10,6 +10,9 @@ import org.scalatest.matchers.should.Matchers
 
 /**
   * Test suite for CIRCT Debug Intrinsics
+  * 
+  * CRITICAL TESTS: Validates Probe API usage (P2 fix)
+  * These tests protect against regression to weak binding.
   */
 class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
   
@@ -39,11 +42,14 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     sys.props.remove("chisel.debug")
   }
   
-  // CRITICAL TEST: Validate Probe API is used (P2 fix)
-  it should "use Probe API for signal binding (not direct signal reference)" in {
+  // ============================================================================
+  // CRITICAL TEST SUITE: Probe API Validation (Weak Spot #1)
+  // ============================================================================
+  
+  it should "use Probe API for signal binding (REGRESSION GUARD)" in {
     sys.props("chisel.debug") = "true"
     
-    class ProbeTestModule extends Module {
+    class ProbeAPITestModule extends Module {
       val io = IO(new Bundle {
         val data = Output(UInt(8.W))
       })
@@ -52,24 +58,32 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
       DebugIntrinsic.emit(io.data, "io.data", "IO")
     }
     
-    val firrtl = ChiselStage.emitCHIRRTL(new ProbeTestModule)
+    val firrtl = ChiselStage.emitCHIRRTL(new ProbeAPITestModule)
     
-    // CRITICAL: Check for Probe API constructs in FIRRTL
-    // If these are missing, we've regressed to weak binding!
+    // CRITICAL: Verify Probe API constructs in FIRRTL
+    // If ANY of these fail, we've regressed to weak binding!
     
-    // 1. Probe wire declaration
-    firrtl should include regex "wire .* : Probe<.*>"
+    withClue("Missing Probe type declaration - ProbeValue() not called!") {
+      // Must declare: wire _probe_XXX : Probe<UInt<8>>
+      firrtl should include regex "wire\\s+\\w+\\s*:\\s*Probe<UInt<\\d+>>"
+    }
     
-    // 2. Probe definition using probe()
-    firrtl should include regex "define\\(.*,\\s*probe\\("
+    withClue("Missing probe() function - ProbeValue() not called!") {
+      // Must have: define(_probe_XXX, probe(io.data))
+      firrtl should include regex "define\\(\\w+,\\s*probe\\("
+    }
     
-    // 3. Intrinsic reads probe with read()
-    firrtl should include regex "intrinsic\\(circt_debug_typeinfo.*read\\("
+    withClue("Intrinsic doesn't use read() - direct signal reference (WEAK BINDING)!") {
+      // Must have: intrinsic(circt_debug_typeinfo<...>, read(_probe_XXX))
+      firrtl should include regex "intrinsic\\(circt_debug_typeinfo.*,\\s*read\\("
+    }
     
-    // 4. Should NOT have direct signal in intrinsic (weak binding)
-    // This would indicate regression: intrinsic(..., io.data)
-    val badPattern = """intrinsic\(circt_debug_typeinfo[^)]*\)\(\s*io\.data\s*\)""".r
-    badPattern.findFirstIn(firrtl) shouldBe None
+    // NEGATIVE TEST: Should NOT have direct signal reference
+    withClue("REGRESSION DETECTED: Intrinsic uses direct signal, not probe!") {
+      // Bad pattern: intrinsic(circt_debug_typeinfo<...>)(io.data)
+      val weakBindingPattern = """intrinsic\(circt_debug_typeinfo[^)]*\)\(\s*io\.data\s*\)""".r
+      weakBindingPattern.findFirstIn(firrtl) shouldBe None
+    }
     
     sys.props.remove("chisel.debug")
   }
@@ -94,18 +108,109 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     
     val firrtl = ChiselStage.emitCHIRRTL(new MultiProbeModule)
     
-    // Should have 3 distinct probe wires
-    val probeWires = """wire (\w+) : Probe<.*>""".r.findAllMatchIn(firrtl)
-    val probeNames = probeWires.map(_.group(1)).toSet
-    probeNames.size shouldBe >= 3  // At least 3 unique probe names
+    // Extract all probe wire names
+    val probeWirePattern = """wire\\s+(\\w+)\\s*:\\s*Probe<.*>""".r
+    val probeNames = probeWirePattern.findAllMatchIn(firrtl).map(_.group(1)).toSet
     
-    // Each probe should have corresponding define
+    withClue(s"Expected at least 3 unique probe wires, found: $probeNames") {
+      probeNames.size should be >= 3
+    }
+    
+    // Each probe should have corresponding define statement
     probeNames.foreach { probeName =>
-      firrtl should include(s"define($probeName")
+      withClue(s"Missing define() for probe: $probeName") {
+        firrtl should include(s"define($probeName")
+      }
+    }
+    
+    // Each probe should be read in an intrinsic
+    probeNames.foreach { probeName =>
+      withClue(s"Probe $probeName not read by intrinsic") {
+        firrtl should include regex s"read\\($probeName\\)"
+      }
     }
     
     sys.props.remove("chisel.debug")
   }
+  
+  it should "verify probe definition syntax is correct" in {
+    sys.props("chisel.debug") = "true"
+    
+    class ProbeDefineTestModule extends Module {
+      val io = IO(new Bundle {
+        val signal = Output(UInt(16.W))
+      })
+      io.signal := 0xBEEF.U
+      
+      DebugIntrinsic.emit(io.signal, "io.signal", "IO")
+    }
+    
+    val firrtl = ChiselStage.emitCHIRRTL(new ProbeDefineTestModule)
+    
+    // Extract probe wire name
+    val probeWirePattern = """wire\\s+(\\w+)\\s*:\\s*Probe<UInt<\\d+>>""".r
+    val probeNameOpt = probeWirePattern.findFirstMatchIn(firrtl).map(_.group(1))
+    
+    probeNameOpt should not be None
+    val probeName = probeNameOpt.get
+    
+    // Verify complete probe definition pattern
+    withClue("Probe define statement malformed") {
+      // Should match: define(_probe_XXX, probe(io.signal))
+      firrtl should include regex s"define\\($probeName,\\s*probe\\(io\.signal\\)\\)"
+    }
+    
+    // Verify intrinsic reads the probe
+    withClue("Intrinsic doesn't read the probe") {
+      firrtl should include regex s"intrinsic\\(circt_debug_typeinfo.*read\\($probeName\\)"
+    }
+    
+    sys.props.remove("chisel.debug")
+  }
+  
+  it should "fail gracefully if Probe API is removed (CANARY TEST)" in {
+    sys.props("chisel.debug") = "true"
+    
+    class CanaryModule extends Module {
+      val io = IO(new Bundle {
+        val test = Output(Bool())
+      })
+      io.test := true.B
+      
+      DebugIntrinsic.emit(io.test, "io.test", "IO")
+    }
+    
+    val firrtl = ChiselStage.emitCHIRRTL(new CanaryModule)
+    
+    // This test MUST fail if ProbeValue() is removed from DebugIntrinsic.emit()
+    val probeAPIPresent = 
+      firrtl.contains("Probe<") &&
+      firrtl.contains("probe(") &&
+      firrtl.contains("read(")
+    
+    withClue(
+      """\n\n========================================
+      |CRITICAL REGRESSION DETECTED!
+      |========================================
+      |Probe API missing from debug intrinsics.
+      |This breaks metadata→RTL binding!
+      |
+      |Check: DebugIntrinsic.emit() implementation
+      |Expected: ProbeValue(data) + read(probe)
+      |Found: Direct signal reference (weak binding)
+      |
+      |See: PR #1 commit 678db15 for fix
+      |========================================\n\n""".stripMargin
+    ) {
+      probeAPIPresent shouldBe true
+    }
+    
+    sys.props.remove("chisel.debug")
+  }
+  
+  // ============================================================================
+  // END CRITICAL TESTS
+  // ============================================================================
   
   it should "not generate intrinsics when debug flag is disabled" in {
     sys.props.remove("chisel.debug")
@@ -150,14 +255,15 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     firrtl should include("target = \"io.in\"")
     firrtl should include("target = \"io.in.field1\"")
     firrtl should include("target = \"io.in.field2\"")
-    // Fix: inner class name may have suffixes, use proper regex escaping
     firrtl should include regex "typeName = \"MyBundle\\$\\d+\""
     
-    // CRITICAL: All signals should use Probe API
+    // CRITICAL: All recursive signals should use Probe API
     val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
     val probeReadCount = "read\\(".r.findAllMatchIn(firrtl).length
-    // At least as many probe reads as intrinsics (may have extra probes for other purposes)
-    probeReadCount should be >= intrinsicCount
+    
+    withClue(s"Probe API not used for all recursive intrinsics: $intrinsicCount intrinsics, $probeReadCount reads") {
+      probeReadCount should be >= intrinsicCount
+    }
     
     sys.props.remove("chisel.debug")
   }
@@ -193,8 +299,9 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     firrtl should include("typeName = \"Vec\"")
     firrtl should include("parameters = \"length=4;elementType=UInt\"")
     
-    // Verify Probe API used
-    firrtl should include regex "read\\(.*\\).*:.*Vec"
+    // Verify Probe API used for Vec
+    firrtl should include regex "Probe<Vec"
+    firrtl should include regex "read\\(.*\\)"
     
     sys.props.remove("chisel.debug")
   }
@@ -216,12 +323,11 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     val firrtl = ChiselStage.emitCHIRRTL(new EnumModule)
     
     // Verify enum definition is captured
-    // Fix: inner object name may have suffixes
     firrtl should include regex "typeName = \"MyState\\$\\d+\""
     firrtl should include("enumDef")
     firrtl should (include("IDLE") or include("0:"))
     
-    // Verify Probe API used for enum
+    // Verify Probe API used for enum (UInt representation)
     firrtl should include regex "Probe<UInt<\\d+>>"
     
     sys.props.remove("chisel.debug")
@@ -261,8 +367,9 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
     val probeDefineCount = "define\\(".r.findAllMatchIn(firrtl).length
     
-    // Should have at least one probe definition per intrinsic
-    probeDefineCount should be >= intrinsicCount
+    withClue(s"Probe definitions missing for nested intrinsics: $intrinsicCount intrinsics, $probeDefineCount defines") {
+      probeDefineCount should be >= intrinsicCount
+    }
     
     sys.props.remove("chisel.debug")
   }
@@ -302,7 +409,6 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     val firrtl = ChiselStage.emitCHIRRTL(new IntegrationModule)
     
     // Verify all intrinsics are present
-    // Modern FIRRTL uses intrinsic(...) not inst
     firrtl should include regex "intrinsic\\(circt_debug_typeinfo"
     
     // Count intrinsic instances (should be 3)
@@ -311,42 +417,17 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     
     // CRITICAL REGRESSION TEST: Verify all use Probe API
     val probeReadCount = "read\\(".r.findAllMatchIn(firrtl).length
-    probeReadCount should be >= intrinsicCount
     
-    // Each intrinsic should have read() in its operands
-    val intrinsicsWithRead = """intrinsic\(circt_debug_typeinfo[^)]*\)[^)]*read\(""".r
-      .findAllMatchIn(firrtl)
-      .length
-    intrinsicsWithRead shouldBe intrinsicCount
-    
-    sys.props.remove("chisel.debug")
-  }
-  
-  // REGRESSION GUARD: Detect if someone removes Probe API
-  it should "fail if Probe API is removed (regression protection)" in {
-    sys.props("chisel.debug") = "true"
-    
-    class RegressionGuardModule extends Module {
-      val io = IO(new Bundle {
-        val signal = Output(UInt(16.W))
-      })
-      io.signal := 0xCAFE.U
-      
-      DebugIntrinsic.emit(io.signal, "io.signal", "IO")
+    withClue(s"Not all intrinsics use Probe API: $intrinsicCount intrinsics, $probeReadCount reads") {
+      probeReadCount should be >= intrinsicCount
     }
     
-    val firrtl = ChiselStage.emitCHIRRTL(new RegressionGuardModule)
+    // Each intrinsic should have read() in its operands
+    val intrinsicsWithReadPattern = """intrinsic\(circt_debug_typeinfo[^)]*\)[^;]*read\(""".r
+    val intrinsicsWithRead = intrinsicsWithReadPattern.findAllMatchIn(firrtl).length
     
-    // If this test fails, someone removed ProbeValue() from DebugIntrinsic.emit!
-    withClue("REGRESSION: Probe API missing! Check DebugIntrinsic.emit() implementation.") {
-      // Must have Probe type declaration
-      firrtl should include regex "Probe<UInt<\\d+>>"
-      
-      // Must have probe() function call
-      firrtl should include("probe(")
-      
-      // Must have read() in intrinsic context
-      firrtl should include regex "circt_debug_typeinfo.*read\\("
+    withClue(s"Some intrinsics missing read(): $intrinsicsWithRead out of $intrinsicCount") {
+      intrinsicsWithRead shouldBe intrinsicCount
     }
     
     sys.props.remove("chisel.debug")
