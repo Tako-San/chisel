@@ -5,6 +5,7 @@ package chiselTests
 import chisel3._
 import chisel3.stage.phases.{AddDebugIntrinsicsPhase, EnableDebugAnnotation}
 import chisel3.stage.ChiselCircuitAnnotation
+import chisel3.util.circt.DebugInfo
 import circt.stage.ChiselStage
 import firrtl.AnnotationSeq
 import org.scalatest.flatspec.AnyFlatSpec
@@ -26,13 +27,17 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
         val out = Output(UInt(8.W))
       })
       io.out := io.in
+      
+      // Explicit annotation required
+      DebugInfo.annotate(io.in, "io.in")
     }
     
     // Phase should trigger with system property
     val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
     
-    // Should process module even without explicit annotate() calls
+    // Should process module with explicit annotations
     firrtl should include("TestModule")
+    firrtl should include("circt_debug_typeinfo")
     
     sys.props.remove("chisel.debug")
   }
@@ -45,6 +50,9 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
         val data = Output(UInt(8.W))
       })
       io.data := 0.U
+      
+      // Try to annotate, but flag is off
+      DebugInfo.annotate(io.data, "data")
     }
     
     val firrtl = ChiselStage.emitCHIRRTL(new SimpleModule)
@@ -53,10 +61,10 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
     firrtl should not include "circt_debug_typeinfo"
   }
   
-  it should "process IO ports automatically when enabled" in {
+  it should "process explicitly annotated signals" in {
     sys.props("chisel.debug") = "true"
     
-    class AutoIOModule extends Module {
+    class ExplicitModule extends Module {
       val io = IO(new Bundle {
         val a = Input(UInt(8.W))
         val b = Input(UInt(8.W))
@@ -64,16 +72,18 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
       })
       
       io.sum := io.a +& io.b
-      // No explicit DebugInfo.annotate() calls!
+      
+      // Explicit DebugInfo.annotate() calls
+      DebugInfo.annotate(io.a, "io.a")
+      DebugInfo.annotate(io.sum, "io.sum")
     }
     
-    val firrtl = ChiselStage.emitCHIRRTL(new AutoIOModule)
+    val firrtl = ChiselStage.emitCHIRRTL(new ExplicitModule)
     
-    // Phase should auto-annotate IO
+    // Phase should process explicit annotations
     firrtl should include("circt_debug_typeinfo")
-    firrtl should include("target = \"io\"")
-    // Should see fields as well if recursive
     firrtl should include("target = \"io.a\"")
+    firrtl should include("target = \"io.sum\"")
     
     sys.props.remove("chisel.debug")
   }
@@ -103,6 +113,7 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
         val out = Output(UInt(4.W))
       })
       io.out := io.in
+      DebugInfo.annotate(io.in, "subIn")
     }
     
     class TopModule extends Module {
@@ -114,6 +125,8 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
       val sub = Module(new SubModule)
       sub.io.in := io.data
       io.result := sub.io.out
+      
+      DebugInfo.annotate(io.data, "topData")
     }
     
     val firrtl = ChiselStage.emitCHIRRTL(new TopModule)
@@ -121,6 +134,8 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
     // Should process both TopModule and SubModule
     firrtl should include("TopModule")
     firrtl should include("SubModule")
+    firrtl should include("target = \"topData\"")
+    firrtl should include("target = \"subIn\"")
     
     sys.props.remove("chisel.debug")
   }
@@ -152,9 +167,9 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
     anno shouldBe a[firrtl.annotations.NoTargetAnnotation]
   }
   
-  behavior of "Phase with complex Bundle hierarchies"
+  behavior of "Phase with explicit annotations"
   
-  it should "auto-process nested IO bundles" in {
+  it should "process nested IO bundles with explicit annotation" in {
     sys.props("chisel.debug") = "true"
     
     class NestedIO extends Bundle {
@@ -169,6 +184,9 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
       val io = IO(new NestedIO)
       io.ctrl.ready := io.ctrl.valid
       io.data := 0.U
+      
+      // Explicit recursive annotation
+      DebugInfo.annotateRecursive(io, "io")
     }
     
     val firrtl = ChiselStage.emitCHIRRTL(new NestedIOModule)
@@ -181,7 +199,7 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
     sys.props.remove("chisel.debug")
   }
   
-  it should "handle IO with Vecs" in {
+  it should "handle IO with Vecs when explicitly annotated" in {
     sys.props("chisel.debug") = "true"
     
     class VecIOModule extends Module {
@@ -191,6 +209,9 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
       })
       
       io.vecOut := io.vecIn
+      
+      // Explicit annotation
+      DebugInfo.annotate(io.vecIn, "io.vecIn")
     }
     
     val firrtl = ChiselStage.emitCHIRRTL(new VecIOModule)
@@ -243,6 +264,9 @@ class AddDebugIntrinsicsPhaseSpec extends AnyFlatSpec with Matchers {
       })
       
       io.data := 42.U  // Source location should be captured
+      
+      // Explicit annotation
+      DebugInfo.annotate(io.data, "io.data")
     }
     
     val firrtl = ChiselStage.emitCHIRRTL(new SourceLocModule)
