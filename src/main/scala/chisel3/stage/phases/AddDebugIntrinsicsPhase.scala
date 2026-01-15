@@ -48,9 +48,6 @@ class AddDebugIntrinsicsPhase extends Phase {
   
   /**
     * Transform annotations by adding debug intrinsics to elaborated circuit.
-    * 
-    * P1 FIX: Use ChiselCircuitAnnotation (standard Chisel 6 annotation)
-    * instead of non-existent DesignAnnotation.
     */
   def transform(annotations: AnnotationSeq): AnnotationSeq = {
     // Check if debug mode is enabled
@@ -64,15 +61,14 @@ class AddDebugIntrinsicsPhase extends Phase {
     println("[Chisel Debug] Generating debug intrinsics for type metadata...")
     
     // P1 FIX: Extract ChiselCircuitAnnotation (created by Elaborate phase)
-    // This is the standard way to access elaborated circuit in Chisel 6+
+    // NOTE: ChiselCircuitAnnotation is not a case class in all versions, so use type match
     val circuitOpt = annotations.collectFirst {
-      case ChiselCircuitAnnotation(circuit) => circuit
+      case a: ChiselCircuitAnnotation => a.circuit
     }
     
     circuitOpt match {
       case Some(circuit) =>
         // Access the elaborated top module
-        // The circuit contains an ElaboratedCircuit with the module design
         processCircuit(circuit)
         println(s"[Chisel Debug] Completed intrinsic generation")
         annotations
@@ -85,12 +81,11 @@ class AddDebugIntrinsicsPhase extends Phase {
   
   /**
     * Process the elaborated circuit and generate intrinsics.
-    * 
-    * The circuit.elaboratedCircuit gives access to the top module design.
     */
   private def processCircuit(circuit: chisel3.ElaboratedCircuit): Unit = {
+    // FIX: Use topDefinition (Chisel 6+ API) instead of toDefinition
     // The elaborated circuit contains the top module design
-    val topModule = circuit.toDefinition
+    val topModule = circuit.topDefinition
     processModule(topModule)
   }
   
