@@ -81,8 +81,8 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     firrtl should include("target = \"io.in\"")
     firrtl should include("target = \"io.in.field1\"")
     firrtl should include("target = \"io.in.field2\"")
-    // Fix: inner class name may have suffixes
-    firrtl should include regex "typeName = \"MyBundle\\d*\""
+    // Fix: inner class name may have suffixes, use proper regex escaping
+    firrtl should include regex "typeName = \"MyBundle\\$\\d+\""
     
     sys.props.remove("chisel.debug")
   }
@@ -139,7 +139,7 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     
     // Verify enum definition is captured
     // Fix: inner object name may have suffixes
-    firrtl should include regex "typeName = \"MyState\\d*\""
+    firrtl should include regex "typeName = \"MyState\\$\\d+\""
     firrtl should include("enumDef")
     firrtl should (include("IDLE") or include("0:"))
     
@@ -214,7 +214,8 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     val firrtl = ChiselStage.emitCHIRRTL(new IntegrationModule)
     
     // Verify all intrinsics are present
-    firrtl should include regex "inst.*circt_debug_typeinfo"
+    // Modern FIRRTL uses intrinsic(...) not inst
+    firrtl should include regex "intrinsic\\(circt_debug_typeinfo"
     
     // Count intrinsic instances (should be 3)
     val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
