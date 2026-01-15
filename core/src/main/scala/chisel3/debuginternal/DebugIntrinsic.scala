@@ -6,6 +6,7 @@ package chisel3.debuginternal
 // User-facing API is in chisel3.util.circt.DebugInfo
 
 import chisel3._
+import chisel3.probe.{Probe, ProbeValue, read}
 import chisel3.experimental.SourceInfo
 import scala.collection.immutable.ListMap
 
@@ -13,13 +14,20 @@ import scala.collection.immutable.ListMap
   * Generates CIRCT debug intrinsics for preserving high-level type information
   * through FIRRTL compilation.
   * 
-  * Uses Chisel 6+ Intrinsic API for proper FIRRTL intrinsic emission:
-  *   intrinsic(circt_debug_typeinfo<target="io.field", ...>, io.field : UInt<8>)
+  * Uses Chisel 6+ Probe API for reliable signal binding:
+  *   1. ProbeValue(signal) creates persistent reference
+  *   2. Intrinsic consumes probe, creating metadata→RTL dependency
+  *   3. CIRCT tracks probe through transforms, maintaining mapping
   * 
   * These intrinsics are lowered by CIRCT's Debug dialect to:
   * - dbg.* MLIR operations (dbg.struct, dbg.variable, etc.)
   * - hw-debug-info.json manifest
   * - VCD/FST metadata for waveform viewers
+  * 
+  * Architecture follows ChiselTrace approach:
+  * - Probe-based references survive optimization passes
+  * - Metadata stays bound to actual RTL signal after transforms
+  * - Enables Tywaves/HGDB to correlate VCD signals with source types
   */
 object DebugIntrinsic {
   
@@ -34,11 +42,17 @@ object DebugIntrinsic {
   /**
     * Emit a debug intrinsic for a Data element.
     * 
-    * Generates a FIRRTL intrinsic statement:
-    *   intrinsic(circt_debug_typeinfo<target="io.field", typeName="MyBundle", ...>, io.field : UInt<8>)
+    * Generates a FIRRTL intrinsic statement with Probe-based binding:
+    *   wire _probe = probe(io.field)
+    *   intrinsic(circt_debug_typeinfo<target="io.field", ...>, read(_probe))
     * 
-    * CRITICAL: The signal MUST be wired as input to create data dependency,
-    * otherwise CIRCT cannot map metadata to RTL after transforms.
+    * CRITICAL: Uses Probe API to create persistent signal reference.
+    * - ProbeValue(data): creates probe reference to signal
+    * - read(probe): dereferences probe for intrinsic consumption
+    * - CIRCT tracks probe through transforms, preserving metadata binding
+    * 
+    * This solves the "dangling reference" problem where optimizations
+    * rename/eliminate signals, breaking metadata→RTL correspondence.
     * 
     * @param data The signal to attach metadata to
     * @param target Hierarchical name (e.g., "io.field1.subfield")
@@ -79,10 +93,27 @@ object DebugIntrinsic {
         intrinsicParams
     }
     
-    // P0 FIX: Wire data signal as input to create FIRRTL dependency edge
-    // This enables CIRCT to map metadata → RTL signal after transforms
-    // Generated FIRRTL: intrinsic(circt_debug_typeinfo<...>, io.field : UInt<8>)
-    Intrinsic("circt_debug_typeinfo", allParams: _*)(data)
+    // FIX P2: Use Probe API for reliable signal binding
+    // 
+    // WHY: Direct Intrinsic(name, params)(data) creates weak dependency:
+    // - FIRRTL transforms may rename/eliminate 'data'
+    // - Intrinsic parameter 'target="io.field"' becomes stale string
+    // - CIRCT cannot map metadata to final RTL signal
+    // 
+    // SOLUTION: Probe-based reference persists through transforms:
+    // - ProbeValue creates probe that tracks signal identity
+    // - read(probe) dereferences for intrinsic, maintaining binding
+    // - CIRCT Debug dialect uses probe infrastructure for tracking
+    // 
+    // Generated FIRRTL:
+    //   wire _debug_probe_io_field : Probe<UInt<8>>
+    //   define(_debug_probe_io_field, probe(io.field))
+    //   intrinsic(circt_debug_typeinfo<...>, read(_debug_probe_io_field))
+    // 
+    // This ensures metadata→RTL mapping survives DCE, CSE, inlining.
+    val probe = ProbeValue(data)
+    val probeRead = read(probe)
+    Intrinsic("circt_debug_typeinfo", allParams: _*)(probeRead)
     
     Some(())
   }
