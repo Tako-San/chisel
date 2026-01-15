@@ -56,8 +56,8 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     firrtl should include("target = \"io.out.data\"")
     
     // Verify Bundle parameters captured
-    firrtl should include regex "typeName = \"CompleteBundle\\d*\""
-    firrtl should include("parameters = \"dataWidth=16\"")
+    firrtl should include regex "typeName = \"CompleteBundle\\$\\d+\""
+    firrtl should include("parameters = \"$outer=DebugInfoIntegrationSpec;dataWidth=16\"")
     
     // Verify source locations present
     firrtl should include("sourceFile")
@@ -83,7 +83,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     val firrtl = ChiselStage.emitCHIRRTL(new EnumIntegrationModule)
     
     // Verify enum handling
-    firrtl should include regex "typeName = \"FsmState\\d*\""
+    firrtl should include regex "typeName = \"FsmState\\$\\d+\""
     firrtl should include("enumDef")
     
     // Verify enum values appear (in some form)
