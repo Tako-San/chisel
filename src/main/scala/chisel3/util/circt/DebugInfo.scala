@@ -11,18 +11,36 @@ import chisel3.experimental.{SourceInfo, UnlocatableSourceInfo}
   * that preserve high-level type information (Records, Bundles, Vecs, Enums) through
   * the FIRRTL→CIRCT→Verilog compilation pipeline.
   * 
+  * == Overview ==
+  * 
   * Debug information enables:
-  * - Source-level debugging in waveform viewers (Tywaves, Surfer, etc.)
-  * - Interactive debuggers (HGDB) with VPI breakpoints
-  * - Hardware trace correlation with software execution
-  * - Automated test generation from RTL types
+  * - '''Source-level debugging''' in waveform viewers (Tywaves, Surfer, etc.)
+  * - '''Interactive debuggers''' (HGDB) with VPI breakpoints
+  * - '''Hardware trace correlation''' with software execution
+  * - '''Automated test generation''' from RTL types
   * 
   * The intrinsics are lowered by CIRCT's Debug dialect to:
   * - `dbg.*` MLIR operations (type definitions, source locations)
   * - JSON debug manifests (`hw-debug-info.json`)
   * - VCD/FST metadata annotations
   * 
-  * @example {{{\n  * import chisel3.util.circt.DebugInfo
+  * == Usage ==
+  * 
+  * '''Enable debug mode:'''
+  * {{{  
+  * // Via environment variable
+  * export CHISEL_DEBUG=true
+  * 
+  * // Or via system property
+  * sbt -Dchisel.debug=true
+  * 
+  * // Or programmatically
+  * sys.props("chisel.debug") = "true"
+  * }}}
+  * 
+  * '''Annotate signals:'''
+  * {{{  
+  * import chisel3.util.circt.DebugInfo
   * 
   * class MyModule extends Module {
   *   val io = IO(new Bundle {
@@ -30,16 +48,28 @@ import chisel3.experimental.{SourceInfo, UnlocatableSourceInfo}
   *     val data = Output(Vec(4, UInt(8.W)))
   *   })
   *   
-  *   // Explicitly annotate a signal for debug metadata
-  *   DebugInfo.annotate(io.ctrl)
+  *   // Explicitly annotate a signal
+  *   DebugInfo.annotate(io.ctrl, "io.ctrl")
   *   
-  *   // Or enable automatic annotation via CHISEL_DEBUG=true env var
+  *   // Recursively annotate all nested fields
+  *   DebugInfo.annotateRecursive(io, "io")
   * }
   * }}}
+  * 
+  * == Implementation ==
+  * 
+  * Uses Chisel 6+ Probe API for reliable signal binding:
+  * {{{  
+  * wire _probe = probe(io.field)
+  * intrinsic(circt_debug_typeinfo<target="io.field", ...>, read(_probe))
+  * }}}
+  * 
+  * This ensures metadata→RTL mapping survives FIRRTL optimizations (DCE, CSE, inlining).
   * 
   * @see [[https://circt.llvm.org/docs/Dialects/Debug/ CIRCT Debug Dialect]]
   * @see [[https://github.com/rameloni/tywaves-chisel Tywaves Viewer]]
   * @see [[https://github.com/Kuree/hgdb HGDB Interactive Debugger]]
+  * @see [[chisel3.debuginternal.DebugIntrinsic]] for internal implementation
   */
 object DebugInfo {
   
@@ -49,20 +79,50 @@ object DebugInfo {
     * the compilation pipeline and exported in debug manifests.
     * 
     * The intrinsic is emitted as:
-    * {{{\n    *   intrinsic(circt_debug_typeinfo<target="io.field", typeName="MyBundle", ...> : UInt<1>)
+    * {{{  
+    * intrinsic(circt_debug_typeinfo<
+    *   target="io.field",
+    *   typeName="MyBundle",
+    *   binding="IO",
+    *   parameters="width=8",
+    *   sourceFile="MyModule.scala",
+    *   sourceLine=42
+    * >, read(_probe_io_field))
     * }}}
     * 
-    * @param signal The Chisel signal to annotate
-    * @param name Optional hierarchical name override (default: uses signal's binding name)
-    * @param sourceInfo Source location information (automatically provided by compiler)
-    * @return The original signal (passthrough for use in expressions)
+    * @param signal The Chisel signal to annotate (must be hardware-typed Data)
+    * @param name Hierarchical name for the signal (e.g., "io.ctrl.valid"). 
+    *             If empty, uses signal's binding name. Should match VCD signal path.
+    * @param sourceInfo Source location information (automatically provided by compiler).
+    *                   Captures file name and line number for debugging.
+    * @return The original signal unchanged (passthrough for use in expressions)
     * 
-    * @example {{{\n    * val myReg = RegInit(0.U(8.W))
-    * DebugInfo.annotate(myReg)  // Adds debug metadata intrinsic
+    * @example Basic usage:
+    * {{{  
+    * val myReg = RegInit(0.U(8.W))
+    * DebugInfo.annotate(myReg, "counter")
+    * // Generates: intrinsic(circt_debug_typeinfo<target="counter", typeName="UInt", ...>)
+    * }}}
     * 
+    * @example Chaining:
+    * {{{  
     * val io = IO(new MyBundle)
-    * DebugInfo.annotate(io, "top_io")  // Custom name
+    * val annotatedIO = DebugInfo.annotate(io, "top_io")
+    * annotatedIO.field1 := 42.U  // Can continue using the signal
     * }}}
+    * 
+    * @example Custom name:
+    * {{{  
+    * val data = Wire(UInt(32.W))
+    * DebugInfo.annotate(data, "cpu.alu.result")
+    * }}}
+    * 
+    * @note Requires debug mode enabled:
+    *       - Environment: `CHISEL_DEBUG=true`
+    *       - Property: `sys.props("chisel.debug") = "true"`
+    * @note When disabled, this method becomes a no-op with zero overhead
+    * @see [[annotateRecursive]] for Bundle/Vec traversal
+    * @see [[isEnabled]] to check if debug mode is active
     */
   def annotate[T <: Data](
     signal: T,
@@ -79,22 +139,65 @@ object DebugInfo {
     * For complex structures like nested Bundles, this generates intrinsics
     * for the parent and all children, preserving the full type hierarchy.
     * 
-    * @param signal The root signal to annotate recursively
-    * @param name Optional hierarchical name override
-    * @param sourceInfo Source location (auto-provided)
-    * @return The original signal (passthrough)
+    * This is the recommended method for annotating IO bundles or complex
+    * data structures, as it captures the complete type information.
     * 
-    * @example {{{\n    * class NestedBundle extends Bundle {
-    *   val inner = new Bundle {
-    *     val x = UInt(8.W)
-    *     val y = UInt(8.W)
-    *   }
+    * @param signal The root signal to annotate recursively
+    * @param name Hierarchical name prefix (e.g., "io"). 
+    *             Child fields will be suffixed ("io.field1", "io.field2", etc.)
+    * @param sourceInfo Source location (automatically provided)
+    * @return The original signal unchanged (passthrough)
+    * 
+    * @example Nested Bundle:
+    * {{{  
+    * class InnerBundle extends Bundle {
+    *   val x = UInt(8.W)
+    *   val y = UInt(8.W)
+    * }
+    * 
+    * class OuterBundle extends Bundle {
+    *   val inner = new InnerBundle
     *   val flag = Bool()
     * }
     * 
-    * val io = IO(new NestedBundle)
-    * DebugInfo.annotateRecursive(io, "io")  // Annotates io, io.inner, io.inner.x, etc.
+    * val io = IO(new OuterBundle)
+    * DebugInfo.annotateRecursive(io, "io")
+    * 
+    * // Generates intrinsics for:
+    * // - io (OuterBundle)
+    * // - io.inner (InnerBundle)
+    * // - io.inner.x (UInt<8>)
+    * // - io.inner.y (UInt<8>)
+    * // - io.flag (Bool)
     * }}}
+    * 
+    * @example Vec of UInts:
+    * {{{  
+    * val vec = Wire(Vec(4, UInt(8.W)))
+    * DebugInfo.annotateRecursive(vec, "registers")
+    * 
+    * // Generates intrinsics for:
+    * // - registers (Vec[4, UInt<8>])
+    * // Note: Individual elements not annotated by default (performance)
+    * }}}
+    * 
+    * @example Module IO:
+    * {{{  
+    * class MyModule extends Module {
+    *   val io = IO(new Bundle {
+    *     val in = Input(UInt(8.W))
+    *     val out = Output(UInt(8.W))
+    *   })
+    *   
+    *   // Annotate entire IO bundle
+    *   DebugInfo.annotateRecursive(io, "io")
+    * }
+    * }}}
+    * 
+    * @note For large structures (100+ fields), consider selective annotation
+    *       to avoid FIRRTL size bloat
+    * @note Vec elements are not recursively annotated by default (configurable)
+    * @see [[annotate]] for single-signal annotation
     */
   def annotateRecursive[T <: Data](
     signal: T,
@@ -105,15 +208,38 @@ object DebugInfo {
     signal
   }
   
-  /** Check if Chisel debug info generation is enabled.
+  /** Check if Chisel debug info generation is currently enabled.
     * 
-    * Debug intrinsic generation can be controlled via:
+    * Debug intrinsic generation is controlled by:
     * - Environment variable: `CHISEL_DEBUG=true`
-    * - System property: `-Dchisel.debug=true`
+    * - System property: `-Dchisel.debug=true` or `sys.props("chisel.debug") = "true"`
     * 
-    * When disabled, `annotate()` calls become no-ops with zero overhead.
+    * When disabled, all `annotate()` and `annotateRecursive()` calls become
+    * no-ops with zero overhead (no intrinsics generated, no FIRRTL bloat).
     * 
-    * @return true if debug info generation is enabled
+    * @return `true` if debug info generation is enabled, `false` otherwise
+    * 
+    * @example Conditional annotation:
+    * {{{  
+    * if (DebugInfo.isEnabled) {
+    *   println("Debug intrinsics will be generated")
+    * }
+    * 
+    * val io = IO(new MyBundle)
+    * DebugInfo.annotateRecursive(io, "io")  // No-op if disabled
+    * }}}
+    * 
+    * @example Guard expensive operations:
+    * {{{  
+    * if (DebugInfo.isEnabled) {
+    *   // Only compute debug info when needed
+    *   val debugSignals = collectAllSignals()
+    *   debugSignals.foreach { s => DebugInfo.annotate(s) }
+    * }
+    * }}}
+    * 
+    * @note This check is also performed internally by annotate methods,
+    *       so explicit checking is optional
     */
   def isEnabled: Boolean = {
     chisel3.debuginternal.DebugIntrinsic.isEnabled
