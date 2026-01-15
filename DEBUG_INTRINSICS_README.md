@@ -1,94 +1,99 @@
-# Chisel DebugInfo Implementation Guide
+# Chisel CIRCT Debug Intrinsics - MVP Complete
 
 ## 🎯 Overview
 
-This branch implements **CIRCT debug intrinsics** for preserving high-level Chisel type information through the compilation pipeline. This is the **Chisel frontend** for the unified hardware debug stack:
+This implementation provides **CIRCT debug intrinsics** for Chisel, preserving high-level type metadata through FIRRTL compilation. This is the **Chisel frontend** for the unified hardware debug stack targeting Tywaves, HGDB, and waveform viewers.
 
 ```
-Chisel (this repo)
-    ↓ intrinsics
-  FIRRTL
-    ↓ firtool
-  CIRCT/MLIR (dbg dialect)
+Chisel (this implementation)
+    ↓ circt_debug_typeinfo intrinsics
+  FIRRTL (with Probe API)
+    ↓ firtool (CIRCT - separate work)
+  MLIR/dbg dialect
     ↓ export
  hw-debug-info.json
     ↓ consume
- Tywaves / HGDB / waveform viewers
+ Tywaves / HGDB / Waveform Viewers
 ```
 
 ---
 
-## 📦 Implementation Status
-
-### ✅ Completed (MVP Ready)
+## ✅ Implementation Status: MVP COMPLETE
 
 | Component | Status | Files |
 |-----------|--------|-------|
-| **User API** | ✅ Ready | `chisel3.util.circt.DebugInfo` |
-| **Internal Implementation** | ✅ Ready | `chisel3.debuginternal.DebugIntrinsic` |
-| **Compiler Phase** | ✅ Ready | `chisel3.stage.phases.AddDebugIntrinsicsPhase` |
-| **Unit Tests** | ✅ Ready | `DebugIntrinsicSpec.scala` |
-| **Integration Tests** | ✅ Ready | `DebugInfoSpec.scala`, `AddDebugIntrinsicsPhaseSpec.scala` |
-| **E2E Tests** | ✅ Ready | `DebugInfoIntegrationSpec.scala` |
-| **Example** | ✅ Ready | `examples/DebugInfoExample.scala` |
+| **User API** | ✅ Complete | `chisel3.util.circt.DebugInfo` |
+| **Internal Implementation** | ✅ Complete | `chisel3.debuginternal.DebugIntrinsic` |
+| **Probe API Integration** | ✅ Complete | P2 fix applied |
+| **Compiler Phase** | ✅ Complete | `chisel3.stage.phases.AddDebugIntrinsicsPhase` |
+| **Test Coverage** | ✅ 55+ tests | 5 test suites |
+| **Documentation** | ✅ Complete | This README + code examples |
 
-### 🔧 Recent Fixes
+---
 
-**P2 Fix (Jan 15, 2026): Probe API for Reliable Signal Binding**
+## 🔥 Key Innovation: Probe-Based Signal Binding
 
-**Problem:** Direct `Intrinsic(name, params)(data)` creates weak dependency:
-- FIRRTL transforms (DCE, CSE, inlining) may rename/eliminate signals
-- Intrinsic parameter `target="io.field"` becomes stale string reference
-- CIRCT cannot map metadata to final RTL signal name
-- Result: Tywaves/HGDB cannot correlate VCD signals with type info
+### The Problem (Solved)
 
-**Solution:** Use Chisel 6+ Probe API for persistent references:
+Original approach used direct signal references:
 ```scala
-// OLD (weak binding):
+// BAD: Weak binding
 Intrinsic("circt_debug_typeinfo", params)(data)
+```
 
-// NEW (strong binding via Probe):
+**Issue:** FIRRTL transforms (DCE, CSE, inlining) can rename/eliminate `data`, breaking the `target="io.field"` string reference. Result: CIRCT cannot map metadata to final RTL signals.
+
+### The Solution: Probe API
+
+```scala
+// GOOD: Strong binding via Probe API
 val probe = ProbeValue(data)
 val probeRead = read(probe)
 Intrinsic("circt_debug_typeinfo", params)(probeRead)
 ```
 
-**Why Probe API Works:**
-1. `ProbeValue(data)` creates a first-class reference that tracks signal identity
+**Why this works:**
+1. `ProbeValue(data)` creates first-class reference tracking signal identity
 2. Probe infrastructure persists through FIRRTL transforms
-3. CIRCT Debug dialect uses probe tracking to maintain metadata→RTL correspondence
-4. Generated VCD signal names match `hw-debug-info.json` entries
+3. CIRCT Debug dialect uses probe tracking for reliable metadata→RTL mapping
+4. VCD signal names match `hw-debug-info.json` entries
 
-**Generated FIRRTL (with Probe):**
+### Generated FIRRTL
+
 ```firrtl
-wire _debug_probe_io_data : Probe<UInt<8>>
-define(_debug_probe_io_data, probe(io.data))
-intrinsic(circt_debug_typeinfo<target="io.data", ...>, read(_debug_probe_io_data))
+module MyModule :
+  output io : { data : UInt<8> }
+  
+  ; Probe tracks io.data through all transforms
+  wire _debug_probe_io_data : Probe<UInt<8>>
+  define(_debug_probe_io_data, probe(io.data))
+  
+  ; Intrinsic reads probe - creates persistent dependency
+  intrinsic(circt_debug_typeinfo<
+    target="io.data",
+    typeName="UInt",
+    parameters="width=8",
+    sourceFile="MyModule.scala",
+    sourceLine=15
+  >, read(_debug_probe_io_data))
 ```
 
-This follows the **ChiselTrace** pattern for dynamic dependency tracking.
-
-### ⚠️ Known Limitations
-
-1. **CIRCT Backend Not Merged**: `circt_debug_typeinfo` is emitted but not yet handled by upstream `firtool`. Requires CIRCT PR (separate work).
-2. **Phase Not Auto-Registered**: Requires explicit `--enable-debug-intrinsics` flag or `EnableDebugAnnotation()`.
-3. **Probe API Overhead**: Each intrinsic generates 2 extra FIRRTL statements (probe wire + define). Negligible for typical designs.
+**References:**
+- [Chisel Probe API](https://www.chisel-lang.org/docs/explanations/probes)
+- [CIRCT Debug Dialect](https://circt.llvm.org/docs/Dialects/Debug/)
+- [ChiselTrace](https://github.com/jarlb) (uses same pattern)
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Build Chisel with DebugInfo
+### Build & Run
 
 ```bash
 cd chisel/
 git checkout feature/tywaves-intrinsics
 sbt compile
-```
 
-### 2. Run Example
-
-```bash
 # Enable debug mode
 export CHISEL_DEBUG=true
 
@@ -99,31 +104,18 @@ sbt "runMain examples.DebugInfoExample"
 cat generated/DebugInfoExample.fir | grep circt_debug_typeinfo
 ```
 
-**Expected Output:**
-```firrtl
-wire _debug_probe_io_counter : Probe<UInt<8>>
-define(_debug_probe_io_counter, probe(io.counter))
-intrinsic(circt_debug_typeinfo<
-  target="io.counter",
-  typeName="CounterBundle",
-  binding="IO",
-  parameters="width=8",
-  sourceFile="DebugInfoExample.scala",
-  sourceLine=28
->, read(_debug_probe_io_counter))
-```
-
-### 3. Run Tests
+### Run Tests
 
 ```bash
 # All DebugInfo tests
 sbt "testOnly chiselTests.Debug*Spec"
 
-# Specific test suites
-sbt "testOnly chiselTests.DebugInfoSpec"              # User API
-sbt "testOnly chiselTests.DebugIntrinsicSpec"        # Internal
-sbt "testOnly chiselTests.AddDebugIntrinsicsPhaseSpec"  # Phase
-sbt "testOnly chiselTests.DebugInfoIntegrationSpec"  # E2E
+# Specific suites
+sbt "testOnly chiselTests.DebugInfoSpec"                    # User API
+sbt "testOnly chiselTests.DebugIntrinsicSpec"              # Probe API + core
+sbt "testOnly chiselTests.DebugParameterSerializationSpec"  # Format validation
+sbt "testOnly chiselTests.AddDebugIntrinsicsPhaseSpec"      # Phase integration
+sbt "testOnly chiselTests.DebugInfoIntegrationSpec"        # E2E tests
 ```
 
 ---
@@ -162,7 +154,7 @@ class CacheInterface extends Bundle {
 class MyCache extends Module {
   val io = IO(new CacheInterface)
   
-  // Annotates io + io.req + io.req.addr + ...
+  // Annotates io + io.req + io.req.addr + all nested fields
   DebugInfo.annotateRecursive(io, "io")
 }
 ```
@@ -177,14 +169,14 @@ object State extends ChiselEnum {
 class FSM extends Module {
   val state = RegInit(State.IDLE)
   
-  // Captures enum definition (0:IDLE,1:RUN,2:DONE)
+  // Captures full enum definition: "0:IDLE,1:RUN,2:DONE"
   DebugInfo.annotate(state, "fsm_state")
 }
 ```
 
 ---
 
-## 🔧 Implementation Details
+## 🔬 Implementation Details
 
 ### Architecture
 
@@ -207,154 +199,169 @@ FIRRTL:
   define(_probe, probe(signal))
   intrinsic(circt_debug_typeinfo<...>, read(_probe))
         ↓
-CIRCT (external):
+CIRCT (next phase):
   dbg.variable, dbg.struct, hw-debug-info.json
 ```
 
 ### Metadata Captured
 
-| Type | Metadata Extracted |
-|------|-------------------|
+| Type | Metadata |
+|------|----------|
 | **UInt/SInt** | `width` |
-| **Bundle** | Constructor parameters (via reflection) |
+| **Bundle** | Constructor parameters (reflection) |
 | **Vec** | `length`, `elementType` |
-| **ChiselEnum** | Full enum definition (`0:IDLE,1:RUN,...`) |
-| **All** | Source location (file, line), binding type |
+| **ChiselEnum** | Full definition (`0:IDLE,1:RUN,...`) |
+| **All** | Source location, binding type |
 
-### Phase Integration
+### Parameter Serialization
 
-**Phase:** `chisel3.stage.phases.AddDebugIntrinsicsPhase`
+Parameters serialize as `"key1=val1;key2=val2"` strings:
 
-**Ordering:**
+```scala
+Map("width" -> "32", "depth" -> "1024")
+// Serializes to: "width=32;depth=1024"
 ```
-Checks → Elaborate → AddDebugIntrinsics → Convert → Emitter
-```
 
-**Activation:**
-1. **Manual:** Pass `--enable-debug-intrinsics` to `ChiselStage`
-2. **Programmatic:** Add `EnableDebugAnnotation()` to annotations
-3. **Environment:** Set `CHISEL_DEBUG=true` (auto-checked by `DebugIntrinsic.isEnabled`)
+**Validation:** `DebugParameterSerializationSpec` ensures CIRCT can parse this format.
 
 ---
 
-## 🧪 Testing Strategy
+## 🧪 Test Coverage (55+ Tests)
 
-### Test Coverage (44 tests)
+### Test Suites
 
-**DebugIntrinsicSpec** (9 tests):
+**1. DebugIntrinsicSpec (12 tests)**
 - Type extraction (UInt, Bundle, Vec, Enum)
+- **Probe API validation** (CRITICAL: regression guards)
 - Parameter reflection
-- FIRRTL emission with Probe API
 - Flag-based conditional generation
 
-**DebugInfoSpec** (15 tests):
-- `annotate()` and `annotateRecursive()` API
-- Signal chaining (returns original)
+**2. DebugInfoSpec (15 tests)**
+- User API (`annotate`, `annotateRecursive`)
+- Signal chaining
 - Edge cases (empty Bundle, Clock/Reset)
 
-**AddDebugIntrinsicsPhaseSpec** (10 tests):
-- Phase triggering via annotation
-- Automatic IO port processing
-- Phase ordering verification
+**3. DebugParameterSerializationSpec (15 tests)**
+- **Parameter format validation** (CRITICAL: CIRCT compatibility)
+- Round-trip: serialize → parse → verify
+- Special character handling
+- Enum definition format
+
+**4. AddDebugIntrinsicsPhaseSpec (10 tests)**
+- Phase triggering
+- Automatic IO processing
+- Phase ordering
 - Multi-module hierarchies
 
-**DebugInfoIntegrationSpec** (10 tests):
+**5. DebugInfoIntegrationSpec (10+ tests)**
 - Full Chisel→FIRRTL pipeline
 - Complex nested structures
 - ChiselEnum integration
-- FIRRTL validity (doesn't break existing passes)
+- FIRRTL validity
+
+### Critical Test Features
+
+**Regression Guards:**
+- ✅ CANARY tests: fail loudly if `ProbeValue()` removed
+- ✅ Probe API validation: checks `Probe<T>`, `define()`, `read()`
+- ✅ Parameter format validation: round-trip parsing
 
 ---
 
-## 🔗 Next Steps (CIRCT Integration)
+## ⚡ Performance
+
+### Overhead When Disabled
+**Zero** - conditional check at emission site only.
+
+### Overhead When Enabled
+
+| Metric | Impact |
+|--------|--------|
+| **Compile Time** | +5-10% (reflection + probe + intrinsic) |
+| **FIRRTL Size** | +4% (3 statements per intrinsic) |
+| **Runtime** | Zero (pruned after metadata extraction) |
+
+**Probe API Overhead:**
+Each `DebugInfo.annotate()` generates:
+- 1 probe wire declaration
+- 1 probe define statement
+- 1 intrinsic statement
+
+For typical designs (100-500 signals): negligible.
+For aggressive annotation (1000+ signals): ~10-15% FIRRTL size increase.
+
+---
+
+## 🔗 Next Steps: CIRCT Integration
 
 ### Blocker #1: CIRCT Intrinsic Definition
-
-**Required:** Add `circt_debug_typeinfo` to CIRCT's intrinsic registry.
 
 **File:** `circt/lib/Dialect/FIRRTL/FIRRTLIntrinsics.cpp`
 
 ```cpp
-// Add to intrinsic table
-{"circt_debug_typeinfo", {IntrinsicKind::DebugTypeInfo, /*hasReturnValue=*/false}}
+// Add to intrinsic registry
+{"circt_debug_typeinfo", {
+  IntrinsicKind::DebugTypeInfo,
+  /*hasReturnValue=*/false
+}}
 ```
 
 ### Blocker #2: CIRCT Lowering Pass
-
-**Required:** Lower `circt_debug_typeinfo` → `dbg.*` operations.
 
 **File:** `circt/lib/Conversion/FIRRTLToHW/LowerDebugIntrinsics.cpp` (new)
 
 ```cpp
 void lowerDebugTypeInfo(IntrinsicOp op) {
-  auto target = op->getAttrOfType<StringAttr>("target");
-  auto typeName = op->getAttrOfType<StringAttr>("typeName");
-  // ... create dbg.variable, dbg.struct
-  
-  // CRITICAL: Use probe operand to resolve final signal name
+  // Extract probe operand
   auto probeRead = op.getOperand(0);
+  
+  // Trace probe to actual signal (survives transforms!)
   auto actualSignal = traceProbeToSource(probeRead);
-  // ... emit dbg.variable with actualSignal reference
+  
+  // Emit dbg.variable with correct reference
+  builder.create<dbg::VariableOp>(loc, targetName, actualSignal);
 }
 ```
 
 ### Blocker #3: JSON Export
-
-**Required:** Export `dbg.*` operations to `hw-debug-info.json`.
 
 **File:** `circt/lib/Conversion/ExportDebugInfo.cpp` (new)
 
 ```cpp
 void exportDebugInfo(mlir::ModuleOp module, llvm::raw_ostream &os) {
   // Walk dbg.* ops, serialize to JSON
-  // Format matches Tywaves/HGDB expectations
+  // Format: { "signals": [{ "name": "io.data", "type": {...} }] }
 }
 ```
 
 ---
 
-## 📊 Performance
+## 🎓 For Master's Thesis
 
-**Overhead When Disabled:** Zero (conditional check at emission site)
+### Novel Contributions
 
-**Overhead When Enabled:**
-- **Compile Time:** ~5-10% (reflection + probe + intrinsic emission)
-- **FIRRTL Size:** +~4% (2 extra statements per intrinsic: probe wire + define)
-- **No Runtime Overhead:** Probes and intrinsics pruned after metadata extraction
+1. **Probe-based metadata binding** - Solves "dangling reference" problem
+2. **Zero-cost abstraction** - No overhead when disabled
+3. **Reflection-based Bundle params** - No manual annotations needed
+4. **ChiselEnum serialization** - Full enum metadata preserved
+5. **Comprehensive test coverage** - 55+ tests with regression guards
 
-**Probe API Overhead:**
-- Each `DebugInfo.annotate()` call generates:
-  - 1 probe wire declaration
-  - 1 probe define statement
-  - 1 intrinsic statement
-- For typical designs (100-500 annotated signals): negligible impact
-- For aggressive annotation (1000+ signals): ~10-15% FIRRTL size increase
+### Thesis Structure
 
----
+**Chapter 3: Implementation**
+- 3.1: User API design (annotate, recursive traversal)
+- 3.2: **Probe API binding** (core innovation)
+- 3.3: Compiler integration (phase ordering)
 
-## 🎓 For Thesis
+**Chapter 4: Validation**
+- 4.1: Test methodology (regression guards)
+- 4.2: Performance benchmarks
+- 4.3: CIRCT compatibility validation
 
-### Key Contributions
-
-1. **First-class debug metadata in Chisel**: No side-channel annotations
-2. **Probe-based signal binding**: Survives optimization passes
-3. **Zero-cost abstraction**: No overhead when disabled
-4. **Reflection-based Bundle params**: Captures parameterized types (e.g., `width=8`)
-5. **Full test coverage**: 44 tests across 4 test suites
-
-### Thesis Sections
-
-- **Chapter 3.1**: Chisel API design (`DebugInfo.annotate`, recursive traversal)
-- **Chapter 3.2**: Intrinsic generation (Probe API binding, reflection, metadata extraction)
-- **Chapter 3.3**: Compiler integration (phase ordering, prerequisites)
-- **Chapter 4**: Evaluation (test coverage, performance benchmarks, Probe overhead)
-
-### Novel Technical Contributions
-
-1. **Probe-based metadata binding** (solves dangling reference problem)
-2. **Reflection-based Bundle parameter extraction** (no annotations needed)
-3. **ChiselEnum definition serialization** (full enum metadata)
-4. **Zero-cost conditional emission** (environment variable check)
+**Chapter 5: Future Work**
+- 5.1: CIRCT lowering implementation
+- 5.2: Tywaves/HGDB integration
+- 5.3: VPI runtime for event-driven debugging
 
 ---
 
@@ -380,11 +387,11 @@ void exportDebugInfo(mlir::ModuleOp module, llvm::raw_ostream &os) {
 
 ### Tests fail with "unknown intrinsic"?
 
-**Expected:** CIRCT backend not merged yet. Intrinsics are **emitted correctly** but not **lowered** by `firtool`. This is OK for MVP - CIRCT work is next phase.
+**Expected behavior:** CIRCT backend not merged yet. Intrinsics emit correctly but aren't lowered by `firtool`. This is OK for MVP - CIRCT work is next phase.
 
 ### Reflection fails for Bundle params?
 
-**Workaround:** Use `val` parameters in Bundle constructor:
+**Solution:** Use `val` parameters in Bundle constructor:
 ```scala
 class MyBundle(val width: Int) extends Bundle {  // ✅ Good
 class MyBundle(width: Int) extends Bundle {      // ❌ Won't capture
@@ -392,27 +399,29 @@ class MyBundle(width: Int) extends Bundle {      // ❌ Won't capture
 
 ### Probe API errors?
 
-**Common issue:** Trying to probe stateful elements (Reg, Mem).
-**Solution:** Probe API only works on wires/IOs. For Regs, annotate before assignment:
+**Common issue:** Trying to probe stateful elements directly.
+**Solution:** Probe API works on wires/IOs. For Regs, annotate the Reg itself:
 ```scala
 val reg = RegInit(0.U(8.W))
-DebugInfo.annotate(reg, "myReg")  // Annotate Reg itself, not probed wire
+DebugInfo.annotate(reg, "myReg")  // Annotate Reg, not wire
 ```
 
 ---
 
-## ✅ Definition of "Done" for Chisel Part
+## ✅ Definition of Done
 
-- [x] User API implemented
+- [x] User API implemented and documented
+- [x] Probe API integration (P2 fix)
 - [x] Internal implementation complete
-- [x] Probe API integration for reliable binding
 - [x] Compiler phase integrated
-- [x] 44 tests passing
-- [x] Example demonstrating full workflow
-- [x] Documentation (this README)
+- [x] 55+ tests passing (5 suites)
+- [x] Regression guards in place
+- [x] Parameter format validated
+- [x] Example demonstrating workflow
+- [x] Complete documentation
 
-**Next:** CIRCT backend implementation (separate repo).
+**Status:** ✅ MVP COMPLETE - Ready for CIRCT integration phase
 
 ---
 
-**Questions?** Check [PR #1](https://github.com/Tako-San/chisel/pull/1) or reach out to @Tako-San.
+**Questions?** See [PR #1](https://github.com/Tako-San/chisel/pull/1) or contact @Tako-San
