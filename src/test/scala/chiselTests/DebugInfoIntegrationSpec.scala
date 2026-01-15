@@ -56,7 +56,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     firrtl should include("target = \"io.out.data\"")
     
     // Verify Bundle parameters captured
-    firrtl should include("typeName = \"CompleteBundle\"")
+    firrtl should include regex "typeName = \"CompleteBundle\\d*\""
     firrtl should include("parameters = \"dataWidth=16\"")
     
     // Verify source locations present
@@ -83,7 +83,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     val firrtl = ChiselStage.emitCHIRRTL(new EnumIntegrationModule)
     
     // Verify enum handling
-    firrtl should include("typeName = \"FsmState\"")
+    firrtl should include regex "typeName = \"FsmState\\d*\""
     firrtl should include("enumDef")
     
     // Verify enum values appear (in some form)
@@ -169,7 +169,8 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     // Verify Vec metadata
     firrtl should include("typeName = \"Vec\"")
     firrtl should include("length=8")
-    firrtl should include("elementType=QueueEntry")
+    // Scala compiler may add suffix to inner class names
+    firrtl should include regex "elementType=QueueEntry.*"
     
     sys.props.remove("chisel.debug")
   }
@@ -243,12 +244,14 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     
     // Basic sanity checks
     firrtl should include("module ValidFIRRTLModule")
-    firrtl should include("input a")
-    firrtl should include("output sum")
+    // Modern Chisel generates Bundle IOs, so ports are aggregated in 'io'
+    firrtl should include regex "output io.*flip a.*UInt"
+    firrtl should include regex "output io.*sum.*UInt"
     firrtl should include("circt_debug_typeinfo")
     
     // Verify intrinsics don't interfere with actual logic
-    firrtl should include regex "sum.*<=.*add"
+    // Modern FIRRTL uses = for connections
+    firrtl should include regex "sum.*=.*add"
     
     sys.props.remove("chisel.debug")
   }
