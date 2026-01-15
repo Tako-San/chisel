@@ -14,7 +14,7 @@ import scala.collection.immutable.ListMap
   * through FIRRTL compilation.
   * 
   * Uses Chisel 6+ Intrinsic API for proper FIRRTL intrinsic emission:
-  *   intrinsic(circt_debug_typeinfo<target="io.field", ...> : UInt<1>)
+  *   intrinsic(circt_debug_typeinfo<target="io.field", ...>, io.field : UInt<8>)
   * 
   * These intrinsics are lowered by CIRCT's Debug dialect to:
   * - dbg.* MLIR operations (dbg.struct, dbg.variable, etc.)
@@ -35,9 +35,10 @@ object DebugIntrinsic {
     * Emit a debug intrinsic for a Data element.
     * 
     * Generates a FIRRTL intrinsic statement:
-    *   intrinsic(circt_debug_typeinfo<target="io.field", typeName="MyBundle", ...> : UInt<1>)
+    *   intrinsic(circt_debug_typeinfo<target="io.field", typeName="MyBundle", ...>, io.field : UInt<8>)
     * 
-    * The intrinsic has no inputs/outputs - it's purely a metadata annotation.
+    * CRITICAL: The signal MUST be wired as input to create data dependency,
+    * otherwise CIRCT cannot map metadata to RTL after transforms.
     * 
     * @param data The signal to attach metadata to
     * @param target Hierarchical name (e.g., "io.field1.subfield")
@@ -78,9 +79,10 @@ object DebugIntrinsic {
         intrinsicParams
     }
     
-    // Generate intrinsic statement (no inputs/outputs)
-    // Result: intrinsic(circt_debug_typeinfo<...> : UInt<1>)
-    Intrinsic("circt_debug_typeinfo", allParams: _*)()
+    // P0 FIX: Wire data signal as input to create FIRRTL dependency edge
+    // This enables CIRCT to map metadata → RTL signal after transforms
+    // Generated FIRRTL: intrinsic(circt_debug_typeinfo<...>, io.field : UInt<8>)
+    Intrinsic("circt_debug_typeinfo", allParams: _*)(data)
     
     Some(())
   }
@@ -120,26 +122,37 @@ object DebugIntrinsic {
   }
   
   /**
-    * Extract type name from Data element
+    * Extract type name from Data element.
     * 
-    * NOTE: Order matters! Check subtypes before supertypes:
-    * - Bool before UInt (Bool extends UInt)
-    * - AsyncReset before Reset (AsyncReset extends Reset)
+    * P0 FIX: Explicit type guards prevent subtype mis-classification:
+    * - Bool extends UInt, so check Bool first with guard
+    * - AsyncReset extends Reset, so check AsyncReset first with guard
+    * 
+    * Without guards, reordering cases would break Bool/AsyncReset detection.
     */
   def extractTypeName(data: Data): String = {
     data match {
-      case _: Bool => "Bool"         // Must be before UInt!
-      case _: UInt => "UInt"
+      // P0: Bool MUST be checked before UInt (Bool extends UInt)
+      case _: Bool => "Bool"
+      // Guard ensures UInt doesn't match Bool instances
+      case _: UInt if !data.isInstanceOf[Bool] => "UInt"
       case _: SInt => "SInt"
       case _: Clock => "Clock"
-      case _: AsyncReset => "AsyncReset"  // Must be before Reset!
-      case _: Reset => "Reset"
+      // P0: AsyncReset MUST be checked before Reset
+      case _: AsyncReset => "AsyncReset"
+      // Guard ensures Reset doesn't match AsyncReset instances
+      case _: Reset if !data.isInstanceOf[AsyncReset] => "Reset"
       case v: Vec[_] => "Vec"
       case e: EnumType => 
-        e.factory.getClass.getSimpleName.stripSuffix("$").stripSuffix("Type")
+        // Clean enum type name (remove Scala artifacts)
+        e.factory.getClass.getSimpleName
+          .stripSuffix("$")
+          .stripSuffix("Type")
       case b: Bundle => 
+        // Clean bundle class name (remove Scala inner class suffix)
         b.getClass.getSimpleName.stripSuffix("$")
       case _ => 
+        // Fallback for custom Data types
         data.getClass.getSimpleName.stripSuffix("$")
     }
   }
@@ -170,14 +183,17 @@ object DebugIntrinsic {
   
   /**
     * Extract constructor parameters from Bundle using reflection.
-    * Captures parameterized Bundle configurations (e.g., width, depth).
+    * 
+    * IMPROVEMENT: Fallback to element inspection for anonymous Bundles:
+    *   val io = IO(new Bundle { val data = UInt(8.W) })
+    * These have no constructor params but still have meaningful structure.
     */
   def extractBundleParams(bundle: Bundle): Map[String, String] = {
     try {
       val clazz = bundle.getClass
       val constructors = clazz.getConstructors
       
-      if (constructors.isEmpty) return Map.empty
+      if (constructors.isEmpty) return fallbackBundleParams(bundle)
       
       val constructor = constructors.head
       val paramNames = constructor.getParameters.map(_.getName)
@@ -195,26 +211,58 @@ object DebugIntrinsic {
         }
       }
       
-      params.toMap
+      // Fallback if no valid params extracted
+      if (params.isEmpty) {
+        fallbackBundleParams(bundle)
+      } else {
+        params.toMap
+      }
     } catch {
-      case _: Exception => Map.empty
+      case _: Exception => fallbackBundleParams(bundle)
     }
   }
   
   /**
-    * Extract enum definition as "0:IDLE,1:RUN,2:DONE" format
+    * Fallback: extract Bundle structure from elements.
+    * Used for anonymous Bundles that have no constructor parameters.
+    */
+  private def fallbackBundleParams(bundle: Bundle): Map[String, String] = {
+    bundle.elements.map { case (name, field) =>
+      name -> extractTypeName(field)
+    }.toMap
+  }
+  
+  /**
+    * Extract enum definition as "0:EnumName(0=IDLE),1:EnumName(1=RUN)" format.
+    * 
+    * IMPROVEMENT: Clean enum value names:
+    * - Remove package prefixes ("chisel3.ChiselEnum$sIDLE$" -> "IDLE")
+    * - Remove Scala compiler artifacts ($, Type suffixes)
     */
   def extractEnumDef(`enum`: EnumType): String = {
     try {
       val allValues = `enum`.factory.all
+      val enumTypeName = `enum`.factory.getClass.getSimpleName
+        .stripSuffix("$")
+        .stripSuffix("Type")
       
       allValues.map { e =>
-        s"${e.litValue}:${e.toString}"
+        // Clean value name: "sIDLE$" -> "IDLE"
+        val cleanName = e.getClass.getSimpleName
+          .stripSuffix("$")
+          .stripPrefix("s")  // Chisel enum values often start with 's'
+          .stripPrefix("$")
+        
+        // Format: "0:MyState(0=IDLE),1:MyState(1=RUN)"
+        s"${e.litValue}:$enumTypeName(${e.litValue}=$cleanName)"
       }.mkString(",")
     } catch {
       case _: Exception => 
-        // Fallback: just use the current value
-        s"${`enum`.litValue}:${`enum`.toString}"
+        // Fallback: just use current value
+        val cleanName = `enum`.getClass.getSimpleName
+          .stripSuffix("$")
+          .stripSuffix("Type")
+        s"${`enum`.litValue}:$cleanName"
     }
   }
   
