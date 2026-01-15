@@ -9,6 +9,7 @@ import chisel3.debuginternal.DebugIntrinsic
 import firrtl.annotations.{Annotation, NoTargetAnnotation}
 import firrtl.options.{Dependency, Phase, StageOptions}
 import firrtl.AnnotationSeq
+import java.lang.reflect.Method
 
 /**
   * Modern elaboration phase for generating CIRCT debug intrinsics.
@@ -46,9 +47,6 @@ class AddDebugIntrinsicsPhase extends Phase {
   
   override def invalidates(a: Phase) = false
   
-  /**
-    * Transform annotations by adding debug intrinsics to elaborated circuit.
-    */
   def transform(annotations: AnnotationSeq): AnnotationSeq = {
     // Check if debug mode is enabled
     val enableDebug = annotations.exists(_.isInstanceOf[EnableDebugAnnotation]) ||
@@ -60,15 +58,23 @@ class AddDebugIntrinsicsPhase extends Phase {
     
     println("[Chisel Debug] Generating debug intrinsics for type metadata...")
     
-    // P1 FIX: Extract ChiselCircuitAnnotation (created by Elaborate phase)
-    // NOTE: ChiselCircuitAnnotation is not a case class in all versions, so use type match
+    // FIX 1: Safely extract circuit from ChiselCircuitAnnotation using reflection
+    // This handles cases where it's not a case class or fields are protected in newer Chisel versions
     val circuitOpt = annotations.collectFirst {
-      case a: ChiselCircuitAnnotation => a.circuit
-    }
+      case a: ChiselCircuitAnnotation => 
+        try {
+          // Use reflection to access 'circuit' method/field
+          val method = a.getClass.getMethod("circuit")
+          method.invoke(a).asInstanceOf[chisel3.ElaboratedCircuit]
+        } catch {
+          case _: Throwable => 
+            println("[Chisel Debug] Warning: Could not access .circuit on ChiselCircuitAnnotation")
+            null
+        }
+    }.filter(_ != null)
     
     circuitOpt match {
       case Some(circuit) =>
-        // Access the elaborated top module
         processCircuit(circuit)
         println(s"[Chisel Debug] Completed intrinsic generation")
         annotations
@@ -83,10 +89,21 @@ class AddDebugIntrinsicsPhase extends Phase {
     * Process the elaborated circuit and generate intrinsics.
     */
   private def processCircuit(circuit: chisel3.ElaboratedCircuit): Unit = {
-    // FIX: Use topDefinition (Chisel 6+ API) instead of toDefinition
-    // The elaborated circuit contains the top module design
-    val topModule = circuit.topDefinition
-    processModule(topModule)
+    // FIX 2: Extract BaseModule from Definition using reflection
+    // circuit.topDefinition returns a Definition[T], which wraps the actual module in 'proto'
+    try {
+      val topDef = circuit.topDefinition
+      
+      // Definition wraps the module in a private 'proto' field
+      val protoField = topDef.getClass.getDeclaredField("proto")
+      protoField.setAccessible(true)
+      val topModule = protoField.get(topDef).asInstanceOf[BaseModule]
+      
+      processModule(topModule)
+    } catch {
+      case e: Exception =>
+        println(s"[Chisel Debug] Error extracting top module: ${e.getMessage}")
+    }
   }
   
   /**
