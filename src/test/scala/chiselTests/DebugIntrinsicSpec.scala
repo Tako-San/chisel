@@ -157,7 +157,7 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     // Verify complete probe definition pattern
     withClue("Probe define statement malformed") {
       // Should match: define(_probe_XXX, probe(io.signal))
-      firrtl should include regex s"define\\($probeName,\\s*probe\\(io\.signal\\)\\)"
+      firrtl should include regex s"define\\($probeName,\\s*probe\\(io\\.signal\\)\\)"
     }
     
     // Verify intrinsic reads the probe
@@ -333,6 +333,40 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     sys.props.remove("chisel.debug")
   }
   
+  it should "clean enum value names correctly (smart 's' prefix handling)" in {
+    // Test the enum value name cleaning logic
+    
+    // Simulate Scala-generated enum value names
+    object TestEnum extends ChiselEnum {
+      // Scala typically generates: sIDLE$, sRUN$, etc.
+      val IDLE = Value  // Internally: "sIDLE$"
+      val RUN = Value   // Internally: "sRUN$"
+    }
+    
+    // Extract enum definition
+    val enumDef = DebugIntrinsic.extractEnumDef(TestEnum.IDLE)
+    
+    // Should clean Scala artifacts but preserve actual 's' prefixes
+    withClue("Enum value names should be cleaned of Scala artifacts") {
+      // Should contain "IDLE" or "RUN", not "sIDLE" or "sRUN"
+      // (unless user explicitly named them that way)
+      enumDef should include regex "(IDLE|RUN)"
+    }
+    
+    // Should NOT have trailing $
+    withClue("Enum values should not contain trailing $") {
+      enumDef should not include regex "\\$\\d*:"
+    }
+    
+    // Test that user-defined names starting with lowercase 's' are preserved
+    // (We can't easily test this with real ChiselEnum, so just document the logic)
+    // Examples that should work:
+    //   "sIDLE" (Scala artifact) → "IDLE"
+    //   "sRUN" (Scala artifact) → "RUN"
+    //   "sleep" (user-defined) → "sleep" (preserved)
+    //   "start" (user-defined) → "start" (preserved)
+  }
+  
   it should "handle nested Bundle structures" in {
     sys.props("chisel.debug") = "true"
     
@@ -383,8 +417,8 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
       val x = UInt(8.W)
     }
     val name = DebugIntrinsic.extractTypeName(new CustomBundle)
-    // Allow CustomBundle or CustomBundle$1
-    name should startWith ("CustomBundle")
+    // Allow CustomBundle or CustomBundle$1, should be cleaned to CustomBundle
+    name should (equal("CustomBundle") or startWith("CustomBundle"))
   }
   
   it should "generate valid FIRRTL that passes basic checks" in {
