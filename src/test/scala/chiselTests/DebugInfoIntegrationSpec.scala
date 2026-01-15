@@ -16,6 +16,28 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
   
   behavior of "DebugInfo End-to-End Pipeline"
   
+  // HELPER: Validate Probe API usage in FIRRTL
+  def validateProbeAPI(firrtl: String, intrinsicCount: Int): Unit = {
+    withClue("Probe API validation failed:") {
+      // 1. Must have Probe type declarations
+      firrtl should include regex "Probe<.*>"
+      
+      // 2. Must have probe() definitions
+      val probeDefineCount = "define\\(".r.findAllMatchIn(firrtl).length
+      probeDefineCount should be >= intrinsicCount
+      
+      // 3. Must have read() in intrinsics
+      val readCount = "read\\(".r.findAllMatchIn(firrtl).length
+      readCount should be >= intrinsicCount
+      
+      // 4. Each intrinsic should use read(), not direct signal
+      val intrinsicsWithRead = """intrinsic\(circt_debug_typeinfo[^)]*\)[^)]*read\(""".r
+        .findAllMatchIn(firrtl)
+        .length
+      intrinsicsWithRead shouldBe >= intrinsicCount
+    }
+  }
+  
   it should "preserve type info through full compilation" in {
     sys.props("chisel.debug") = "true"
     
@@ -63,6 +85,10 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     firrtl should include("sourceFile")
     firrtl should include("sourceLine")
     
+    // CRITICAL: Validate Probe API usage
+    val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
+    validateProbeAPI(firrtl, intrinsicCount)
+    
     sys.props.remove("chisel.debug")
   }
   
@@ -94,6 +120,9 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
       firrtl.contains("1:")
     
     hasEnumValues shouldBe true
+    
+    // CRITICAL: Validate Probe API for enum
+    validateProbeAPI(firrtl, intrinsicCount = 1)
     
     sys.props.remove("chisel.debug")
   }
@@ -142,6 +171,10 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     firrtl should include regex "typeName = \"MemInterface.*\""
     firrtl should include regex "typeName = \"MemRequest.*\""
     
+    // CRITICAL: All nested signals should use Probe API
+    val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
+    validateProbeAPI(firrtl, intrinsicCount)
+    
     sys.props.remove("chisel.debug")
   }
   
@@ -171,6 +204,10 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     firrtl should include("length=8")
     // Scala compiler may add suffix to inner class names
     firrtl should include regex "elementType=QueueEntry.*"
+    
+    // CRITICAL: Vec should use Probe API
+    val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
+    validateProbeAPI(firrtl, intrinsicCount)
     
     sys.props.remove("chisel.debug")
   }
@@ -219,6 +256,10 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     firrtl should include("target = \"subA_io\"")
     firrtl should include("target = \"subB_io\"")
     
+    // CRITICAL: All modules should use Probe API
+    val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
+    validateProbeAPI(firrtl, intrinsicCount)
+    
     sys.props.remove("chisel.debug")
   }
   
@@ -253,6 +294,9 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     // Modern FIRRTL uses = for connections
     firrtl should include regex "sum.*=.*add"
     
+    // CRITICAL: Validate Probe API doesn't break FIRRTL validity
+    validateProbeAPI(firrtl, intrinsicCount = 3)
+    
     sys.props.remove("chisel.debug")
   }
   
@@ -274,6 +318,10 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     // Should NOT contain intrinsics
     firrtl should not include "circt_debug_typeinfo"
     firrtl should not include "target = \"data\""
+    
+    // Should NOT contain Probe constructs when disabled
+    firrtl should not include regex "Probe<.*>"
+    firrtl should not include("probe(")
   }
   
   it should "count correct number of intrinsics" in {
@@ -298,6 +346,63 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     
     val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
     intrinsicCount shouldBe 3
+    
+    // CRITICAL: Should have exactly 3 probe definitions
+    val probeDefineCount = "define\\(".r.findAllMatchIn(firrtl).length
+    probeDefineCount should be >= 3
+    
+    // CRITICAL: Should have exactly 3 read() calls in intrinsics
+    val intrinsicsWithRead = """intrinsic\(circt_debug_typeinfo[^)]*\)[^)]*read\(""".r
+      .findAllMatchIn(firrtl)
+      .length
+    intrinsicsWithRead shouldBe 3
+    
+    sys.props.remove("chisel.debug")
+  }
+  
+  // CRITICAL REGRESSION TEST: E2E validation
+  it should "fail loudly if Probe API is removed from pipeline" in {
+    sys.props("chisel.debug") = "true"
+    
+    class E2ERegressionGuard extends Module {
+      val io = IO(new Bundle {
+        val control = Input(UInt(4.W))
+        val status = Output(UInt(8.W))
+      })
+      
+      val state = RegInit(0.U(8.W))
+      when(io.control === 1.U) {
+        state := state + 1.U
+      }
+      io.status := state
+      
+      DebugInfo.annotate(io.control, "io.control")
+      DebugInfo.annotate(io.status, "io.status")
+      DebugInfo.annotate(state, "state")
+    }
+    
+    val firrtl = ChiselStage.emitCHIRRTL(new E2ERegressionGuard)
+    
+    // If these fail, Probe API was removed!
+    withClue("CRITICAL REGRESSION: Probe API missing from E2E pipeline!") {
+      // Must have Probe types
+      firrtl should include regex "wire .* : Probe<"
+      
+      // Must have probe definitions
+      firrtl should include regex "define\\(.*,\\s*probe\\("
+      
+      // ALL intrinsics must use read()
+      val intrinsicCount = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
+      val intrinsicsWithRead = """intrinsic\(circt_debug_typeinfo[^)]*\)[^)]*read\(""".r
+        .findAllMatchIn(firrtl)
+        .length
+      
+      intrinsicsWithRead shouldBe intrinsicCount
+      
+      // NO intrinsic should use direct signal (weak binding)
+      val weakBindingPattern = """intrinsic\(circt_debug_typeinfo[^)]*\)\(\s*io\.""".r
+      weakBindingPattern.findFirstIn(firrtl) shouldBe None
+    }
     
     sys.props.remove("chisel.debug")
   }
