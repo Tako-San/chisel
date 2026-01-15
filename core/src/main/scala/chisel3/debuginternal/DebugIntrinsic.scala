@@ -273,6 +273,12 @@ object DebugIntrinsic {
     * IMPROVEMENT: Clean enum value names:
     * - Remove package prefixes ("chisel3.ChiselEnum$sIDLE$" -> "IDLE")
     * - Remove Scala compiler artifacts ($, Type suffixes)
+    * - Smart 's' prefix removal: only strip when followed by uppercase (Scala convention)
+    *   Examples:
+    *     "sIDLE" -> "IDLE" (Scala artifact, remove)
+    *     "sRUN" -> "RUN" (Scala artifact, remove)
+    *     "sleep" -> "sleep" (user-defined name, keep)
+    *     "start" -> "start" (user-defined name, keep)
     */
   def extractEnumDef(`enum`: EnumType): String = {
     try {
@@ -282,11 +288,11 @@ object DebugIntrinsic {
         .stripSuffix("Type")
       
       allValues.map { e =>
-        // Clean value name: "sIDLE$" -> "IDLE"
+        // Clean value name with smart 's' prefix handling
         val cleanName = e.getClass.getSimpleName
           .stripSuffix("$")
-          .stripPrefix("s")  // Chisel enum values often start with 's'
-          .stripPrefix("$")
+          .replaceFirst("^s(?=[A-Z])", "")  // Only remove 's' before uppercase
+          .stripPrefix("$")  // Remove any remaining $ prefix
         
         // Format: "0:MyState(0=IDLE),1:MyState(1=RUN)"
         s"${e.litValue}:$enumTypeName(${e.litValue}=$cleanName)"
