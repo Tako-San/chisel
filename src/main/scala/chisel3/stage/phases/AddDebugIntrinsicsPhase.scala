@@ -3,7 +3,7 @@
 package chisel3.stage.phases
 
 import chisel3._
-import chisel3.stage.{ChiselOptions, CircuitSerializationAnnotation}
+import chisel3.stage.{ChiselCircuitAnnotation, ChiselOptions, CircuitSerializationAnnotation}
 import chisel3.experimental.{BaseModule, SourceInfo, UnlocatableSourceInfo}
 import chisel3.debuginternal.DebugIntrinsic
 import firrtl.annotations.{Annotation, NoTargetAnnotation}
@@ -47,7 +47,10 @@ class AddDebugIntrinsicsPhase extends Phase {
   override def invalidates(a: Phase) = false
   
   /**
-    * Transform annotations by adding debug intrinsics to elaborated circuit
+    * Transform annotations by adding debug intrinsics to elaborated circuit.
+    * 
+    * P1 FIX: Use ChiselCircuitAnnotation (standard Chisel 6 annotation)
+    * instead of non-existent DesignAnnotation.
     */
   def transform(annotations: AnnotationSeq): AnnotationSeq = {
     // Check if debug mode is enabled
@@ -60,43 +63,42 @@ class AddDebugIntrinsicsPhase extends Phase {
     
     println("[Chisel Debug] Generating debug intrinsics for type metadata...")
     
-    // Extract elaborated design from annotations
-    val designOpt = annotations.collectFirst {
-      case d: DesignAnnotation[_] => d.design
+    // P1 FIX: Extract ChiselCircuitAnnotation (created by Elaborate phase)
+    // This is the standard way to access elaborated circuit in Chisel 6+
+    val circuitOpt = annotations.collectFirst {
+      case ChiselCircuitAnnotation(circuit) => circuit
     }
     
-    designOpt match {
-      case Some(design) =>
-        // Process top module and all submodules
-        processDesign(design)
+    circuitOpt match {
+      case Some(circuit) =>
+        // Access the elaborated top module
+        // The circuit contains an ElaboratedCircuit with the module design
+        processCircuit(circuit)
         println(s"[Chisel Debug] Completed intrinsic generation")
         annotations
         
       case None =>
-        println("[Chisel Debug] Warning: No design found, skipping intrinsic generation")
+        println("[Chisel Debug] Warning: No circuit found, skipping intrinsic generation")
         annotations
     }
   }
   
   /**
-    * Process the entire design hierarchy
+    * Process the elaborated circuit and generate intrinsics.
+    * 
+    * The circuit.elaboratedCircuit gives access to the top module design.
     */
-  private def processDesign(design: Any): Unit = {
-    design match {
-      case module: BaseModule =>
-        processModule(module)
-        // Note: Submodules are processed during their own elaboration
-        
-      case _ =>
-        println(s"[Chisel Debug] Warning: Unexpected design type: ${design.getClass}")
-    }
+  private def processCircuit(circuit: chisel3.ElaboratedCircuit): Unit = {
+    // The elaborated circuit contains the top module design
+    val topModule = circuit.toDefinition
+    processModule(topModule)
   }
   
   /**
-    * Process a single module and generate intrinsics for its signals
+    * Process a single module and generate intrinsics for its signals.
     * 
     * Uses reflection to access module fields since we don't have
-    * direct API for iterating components in Chisel 6+
+    * direct API for iterating components in Chisel 6+.
     */
   private def processModule(module: BaseModule): Unit = {
     // Create implicit SourceInfo for intrinsic generation
@@ -136,7 +138,7 @@ class AddDebugIntrinsicsPhase extends Phase {
 }
 
 /**
-  * Annotation to enable debug intrinsic generation
+  * Annotation to enable debug intrinsic generation.
   * 
   * Can be added via command-line or programmatically:
   * ```
@@ -145,10 +147,3 @@ class AddDebugIntrinsicsPhase extends Phase {
   * ```
   */
 case class EnableDebugAnnotation() extends NoTargetAnnotation
-
-/**
-  * Annotation carrying the elaborated design
-  * 
-  * Internal annotation created by Elaborate phase
-  */
-private case class DesignAnnotation[T <: BaseModule](design: T) extends NoTargetAnnotation
