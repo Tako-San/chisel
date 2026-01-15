@@ -180,11 +180,15 @@ object DebugIntrinsic {
           .stripSuffix("$")
           .stripSuffix("Type")
       case b: Bundle => 
-        // Clean bundle class name (remove Scala inner class suffix)
-        b.getClass.getSimpleName.stripSuffix("$")
+        // Clean bundle class name (remove Scala inner class suffix like $1)
+        b.getClass.getSimpleName
+          .stripSuffix("$")
+          .replaceAll("\\$\\d+$", "") // Remove anonymous class suffixes like $1, $2
       case _ => 
         // Fallback for custom Data types
-        data.getClass.getSimpleName.stripSuffix("$")
+        data.getClass.getSimpleName
+          .stripSuffix("$")
+          .replaceAll("\\$\\d+$", "") // Remove anonymous class suffixes
     }
   }
   
