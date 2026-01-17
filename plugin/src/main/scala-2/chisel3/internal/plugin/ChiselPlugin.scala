@@ -8,7 +8,10 @@ import nsc.plugins.{Plugin, PluginComponent}
 import scala.reflect.internal.util.NoPosition
 import scala.collection.mutable
 
-private[plugin] case class ChiselPluginArguments(val skipFiles: mutable.HashSet[String] = mutable.HashSet.empty) {
+private[plugin] case class ChiselPluginArguments(
+  val skipFiles: mutable.HashSet[String] = mutable.HashSet.empty,
+  var addDebugIntrinsics: Boolean = false
+) {
   def useBundlePluginOpt = "useBundlePlugin"
   def useBundlePluginFullOpt = s"-P:${ChiselPlugin.name}:$useBundlePluginOpt"
   def genBundleElementsOpt = "genBundleElements"
@@ -16,6 +19,8 @@ private[plugin] case class ChiselPluginArguments(val skipFiles: mutable.HashSet[
   // Annoying because this shouldn't be used by users
   def skipFilePluginOpt = "INTERNALskipFile:"
   def skipFilePluginFullOpt = s"-P:${ChiselPlugin.name}:$skipFilePluginOpt"
+  def addDebugIntrinsicsOpt = "addDebugIntrinsics"
+  def addDebugIntrinsicsFullOpt = s"-P:${ChiselPlugin.name}:$addDebugIntrinsicsOpt"
 }
 
 object ChiselPlugin {
@@ -54,7 +59,8 @@ class ChiselPlugin(val global: Global) extends Plugin {
   val components: List[PluginComponent] = List[PluginComponent](
     new ChiselComponent(global, arguments),
     new BundleComponent(global, arguments),
-    new IdentifierComponent(global, arguments)
+    new IdentifierComponent(global, arguments),
+    new ComponentDebugIntrinsics(this, global)
   )
 
   override def init(options: List[String], error: String => Unit): Boolean = {
@@ -76,10 +82,21 @@ class ChiselPlugin(val global: Global) extends Plugin {
       } else if (option == arguments.genBundleElementsOpt) {
         val msg = s"'${arguments.genBundleElementsOpt}' is now default behavior, you can remove the scalacOption."
         global.reporter.warning(NoPosition, msg)
+      } else if (option == arguments.addDebugIntrinsicsOpt) {
+        arguments.addDebugIntrinsics = true
       } else {
         error(s"Option not understood: '$option'")
       }
     }
+    
+    // Also check environment variable for debug intrinsics
+    if (sys.env.get("CHISEL_PLUGIN_DEBUG_INTRINSICS").exists(_.toLowerCase == "true")) {
+      arguments.addDebugIntrinsics = true
+    }
+    
     true
   }
+  
+  /** Check if debug intrinsics generation is enabled */
+  def addDebugIntrinsics: Boolean = arguments.addDebugIntrinsics
 }

@@ -97,3 +97,81 @@ def indentShow(s: => String): Unit = {
 }
 ```
 
+---
+
+# Chisel Debug Intrinsics Compiler Plugin
+
+**Automatic debug metadata instrumentation for Chisel hardware.**
+
+## Enable
+
+```scala
+// build.sbt
+scalacOptions += "-P:chisel:add-debug-intrinsics"
+```
+
+```bash
+# Runtime
+export CHISEL_DEBUG=true
+sbt run
+```
+
+## Architecture
+
+```
+User Code -> Plugin (AST transform) -> DebugIntrinsic.emit() -> Probe API -> FIRRTL -> CIRCT
+```
+
+**Unified Implementation:**
+- Single source of truth: `DebugIntrinsic.emit()` with Probe API
+- Used by: Plugin (auto), User API (manual)
+- Strong binding: Survives DCE/CSE/inlining
+
+## Supported Constructs
+
+| Construct | Binding | Example |
+|-----------|---------|----------|
+| `RegInit(...)` | `Reg` | `val state = RegInit(0.U)` |
+| `Wire(...)` | `Wire` | `val data = Wire(UInt(8.W))` |
+| `IO(...)` | `IO` | `val io = IO(new Bundle {...})` |
+| `Mem(...)` | `Mem` | `val mem = Mem(16, UInt(8.W))` |
+
+All generate Probe-based FIRRTL:
+
+```firrtl
+wire _probe : Probe<UInt<8>>
+define(_probe, probe(signal))
+node _dbg = intrinsic(circt_debug_typeinfo<...>, read(_probe))
+```
+
+## Advanced Configuration
+
+| Option | Description |
+|--------|-------------|
+| `-P:chisel:verbose` | Verbose compilation logging |
+| `chisel.debug.verbose=true` | Verbose runtime debug output |
+
+**Environment Variables:**
+- `CHISEL_DEBUG=true` - Runtime flag to enable intrinsic emission
+- `CHISEL_PLUGIN_DEBUG_INTRINSICS=true` - Alternative plugin activation
+
+## Development
+
+- **Plugin:** `plugin/src/main/scala/chisel3/internal/plugin/`
+- **Core:** `core/src/main/scala/chisel3/debuginternal/DebugIntrinsic.scala`
+- **User API:** `src/main/scala/chisel3/util/circt/DebugInfo.scala`
+
+### Test Suite
+
+```bash
+sbt "testOnly chiselTests.DebugIntrinsicsPluginSpec"
+sbt "testOnly chiselTests.DebugIntrinsicSpec"
+sbt "testOnly chiselTests.DebugInfoIntegrationSpec"
+```
+
+## References
+
+- [Chisel Probe API](https://www.chisel-lang.org/docs/explanations/probes)
+- [CIRCT Debug Dialect](https://circt.llvm.org/docs/Dialects/Debug/)
+- [Tywaves Viewer](https://github.com/rameloni/tywaves-chisel)
+- [User Guide](../src/main/scala/chisel3/util/circt/DebugInfo.scala) (scaladoc)
