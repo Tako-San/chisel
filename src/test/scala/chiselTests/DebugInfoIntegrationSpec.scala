@@ -98,7 +98,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     }
   }
 
-  it should "handle nested structures" in {
+  it should "handle nested structures recursively" in {
     DebugTestHelpers.withDebugMode {
       class MemRequest extends Bundle {
         val addr = UInt(32.W)
@@ -108,17 +108,22 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
       class SimpleModule extends Module {
         val io = IO(new MemRequest)
 
-        // Annotate single element
-        DebugInfo.annotate(io.addr, "io.addr")
+        // Annotate recursively to verify traversal
+        DebugInfo.annotateRecursive(io, "io")
       }
 
       val firrtl = ChiselStage.emitCHIRRTL(new SimpleModule)
 
-      // Verify basic annotation works
+      // Verify root and children
+      firrtl should include("target = \"io\"")
       firrtl should include("target = \"io.addr\"")
+      firrtl should include("target = \"io.data\"")
+      
+      // Verify types
+      firrtl should include("typeName = \"MemRequest\"")
       firrtl should include("typeName = \"UInt\"")
 
-      DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 1)
+      DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 3)
     }
   }
 
