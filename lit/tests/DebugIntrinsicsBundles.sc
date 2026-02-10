@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: CHISEL_DEBUG=true scala-cli --server=false \\
-// RUN:   --java-home=%JAVAHOME \\
-// RUN:   --extra-jars=%RUNCLASSPATH \\
-// RUN:   --scala-version=%SCALAVERSION \\
-// RUN:   --scala-option="-Xplugin:%SCALAPLUGINJARS" \\
-// RUN:   --scala-option="-P:chiselplugin:addDebugIntrinsics" \\
-// RUN:   --scala-option "-Xprint:componentDebugIntrinsics" \\
+// RUN: CHISEL_DEBUG=true scala-cli --server=false \
+// RUN:   --java-home=%JAVAHOME \
+// RUN:   --extra-jars=%RUNCLASSPATH \
+// RUN:   --scala-version=%SCALAVERSION \
+// RUN:   --scala-option="-Xplugin:%SCALAPLUGINJARS" \
+// RUN:   --scala-option="-P:chiselplugin:addDebugIntrinsics" \
+// RUN:   --scala-option "-Xprint:componentDebugIntrinsics" \
 // RUN:   %s | FileCheck %s
 
 import chisel3._
