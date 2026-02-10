@@ -89,7 +89,6 @@ class ChiselPlugin(val global: Global) extends Plugin {
       }
     }
 
-    // Also check environment variable for debug intrinsics
     if (sys.env.get("CHISEL_PLUGIN_DEBUG_INTRINSICS").exists(_.toLowerCase == "true")) {
       arguments.addDebugIntrinsics = true
     }
@@ -97,6 +96,5 @@ class ChiselPlugin(val global: Global) extends Plugin {
     true
   }
 
-  /** Check if debug intrinsics generation is enabled */
   def addDebugIntrinsics: Boolean = arguments.addDebugIntrinsics
 }
