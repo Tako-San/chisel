@@ -241,7 +241,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     sys.props.remove("chisel.debug")
   }
 
-  it should "generate demo output for thesis documentation" in {
+  it should "generate demo output for documentation" in {
     DebugTestHelpers.withDebugMode {
       object CpuState extends ChiselEnum {
         val sIDLE, sFETCH, sDECODE, sEXECUTE = Value
@@ -279,7 +279,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
       val intrinsics = firrtl.split("\n").filter(_.contains("intrinsic(circt_debug_typeinfo"))
 
       println("\n" + "=" * 70)
-      println("THESIS DEMO: Generated Debug Intrinsics")
+      println("DEMO: Generated Debug Intrinsics")
       println("=" * 70)
       intrinsics.foreach { line =>
         val target = """target = "([^"]+)"""".r.findFirstMatchIn(line).map(_.group(1)).getOrElse("?")
