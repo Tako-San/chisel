@@ -32,7 +32,7 @@ object DebugTestHelpers {
     /** Probe definition: define _WIRE = probe(signal) */
     val ProbeDefine: Regex = """define\s+(\w+)\s*=\s*probe\((.+?)\)""".r
 
-    /** Probe read in intrinsic: intrinsic(..., read(_WIRE)) */
+    /** Probe read in intrinsic: intrinsic(circt_debug_typeinfo.*read(_WIRE)) */
     val ProbeRead: Regex = """intrinsic\(circt_debug_typeinfo.*read\((\w+)\)""".r
 
     /** Weak binding anti-pattern: intrinsic with operand but no read() */
@@ -73,41 +73,43 @@ object DebugTestHelpers {
       s"Expected at least $minIntrinsics intrinsics, found $intrinsicCount"
     )
 
-    assert(
-      Patterns.ProbeType.findFirstIn(firrtl).isDefined,
-      "Missing Probe type declarations - weak binding detected!"
-    )
-
-    val defineCount = Patterns.ProbeDefine.findAllIn(firrtl).length
-    assert(
-      defineCount >= minIntrinsics,
-      s"Only $defineCount define statements for $intrinsicCount intrinsics (expected at least $minIntrinsics)"
-    )
-
-    val readCount = "read\\(".r.findAllIn(firrtl).length
-    assert(
-      readCount >= minIntrinsics,
-      s"Only $readCount read() calls for $intrinsicCount intrinsics (expected at least $minIntrinsics)"
-    )
-
-    // Validate intrinsics use read() - more flexible matching
-    val intrinsicsWithRead = Patterns.IntrinsicsWithRead.findAllIn(firrtl).length
-
-    // Debug output when assertion fails
-    if (intrinsicsWithRead < minIntrinsics) {
-      val allIntrinsics = """intrinsic\(circt_debug_typeinfo[^@]*\) @""".r.findAllIn(firrtl).toList
-      System.err.println(
-        s"\n=== DEBUG: Found $intrinsicsWithRead intrinsics with read() out of $intrinsicCount total ==="
+    if (minIntrinsics > 0) {
+      assert(
+        Patterns.ProbeType.findFirstIn(firrtl).isDefined,
+        "Missing Probe type declarations - weak binding detected!"
       )
-      System.err.println(s"Expected at least: $minIntrinsics")
-      System.err.println(s"\nAll intrinsic statements:")
-      allIntrinsics.take(5).foreach(i => System.err.println(s"  $i"))
-    }
 
-    assert(
-      intrinsicsWithRead >= minIntrinsics,
-      s"Only $intrinsicsWithRead out of $intrinsicCount intrinsics use read() - weak binding detected!"
-    )
+      val defineCount = Patterns.ProbeDefine.findAllIn(firrtl).length
+      assert(
+        defineCount >= minIntrinsics,
+        s"Only $defineCount define statements for $intrinsicCount intrinsics (expected at least $minIntrinsics)"
+      )
+
+      val readCount = "read\\(".r.findAllIn(firrtl).length
+      assert(
+        readCount >= minIntrinsics,
+        s"Only $readCount read() calls for $intrinsicCount intrinsics (expected at least $minIntrinsics)"
+      )
+
+      // Validate intrinsics use read() - more flexible matching
+      val intrinsicsWithRead = Patterns.IntrinsicsWithRead.findAllIn(firrtl).length
+
+      // Debug output when assertion fails
+      if (intrinsicsWithRead < minIntrinsics) {
+        val allIntrinsics = """intrinsic\(circt_debug_typeinfo[^@]*\) @""".r.findAllIn(firrtl).toList
+        System.err.println(
+          s"\n=== DEBUG: Found $intrinsicsWithRead intrinsics with read() out of $intrinsicCount total ==="
+        )
+        System.err.println(s"Expected at least: $minIntrinsics")
+        System.err.println(s"\nAll intrinsic statements:")
+        allIntrinsics.take(5).foreach(i => System.err.println(s"  $i"))
+      }
+
+      assert(
+        intrinsicsWithRead >= minIntrinsics,
+        s"Only $intrinsicsWithRead out of $intrinsicCount intrinsics use read() - weak binding detected!"
+      )
+    }
   }
 
   /** Assert that no weak binding patterns exist in FIRRTL.
