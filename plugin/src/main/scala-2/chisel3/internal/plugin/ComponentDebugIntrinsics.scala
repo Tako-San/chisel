@@ -86,7 +86,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
       if (shouldSkip || !isPluginEnabled) return super.transform(tree)
 
       tree match {
-        // Handle BOTH fields and local variables uniformly
         case vd @ ValDef(mods, name, tpt, rhs)
             if !mods.isSynthetic && !name.toString.startsWith("debug_tmp") && rhs.nonEmpty &&
               isChiselData(tpt) && !isIO(rhs) =>
@@ -94,19 +93,23 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
           val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
           val transformedRHS = transform(rhs)
 
-          // Create symbol: use newVariable for BOTH cases to keep it simple
-          val tempSym = currentOwner.newVariable(tempName, vd.pos)
+          // Create stable value symbol WITHOUT modifying scopes
+          val tempSym = currentOwner.newValue(tempName, vd.pos, SYNTHETIC)
           val typedRHS = localTyper.typed(transformedRHS)
           tempSym.setInfo(typedRHS.tpe)
 
-          val tempValDef = ValDef(tempSym, typedRHS).setPos(vd.pos)
+          // DO NOT call currentOwner.info.decls.enter(tempSym) - causes EmptyScope.enter error
+
+          val tempValDef = localTyper.typed(ValDef(tempSym, typedRHS)).setPos(vd.pos)
           val emitCall = createEmitCall(tempSym, name.toString, extractBinding(rhs), vd.pos)
 
-          // Create block WITHOUT typing it (let later phases handle it)
-          val block = Block(
-            List(tempValDef, emitCall),
-            Ident(tempSym).setPos(vd.pos)
-          ).setPos(vd.pos)
+          // Create and type the block explicitly
+          val block = localTyper.typed(
+            Block(
+              List(tempValDef, emitCall),
+              Ident(tempSym).setPos(vd.pos)
+            )
+          )
 
           treeCopy.ValDef(vd, mods, name, tpt, block)
 
