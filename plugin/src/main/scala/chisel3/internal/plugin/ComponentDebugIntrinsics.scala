@@ -84,25 +84,35 @@ class ComponentDebugIntrinsics(
 
     /**
       * Check if ValDef should be instrumented and return the binding type.
-      * Guards: (1) chisel3.Data type, (2) Chisel constructor (RegInit/Wire/IO/Mem)
+      * Guards: (1) Chisel constructor (RegInit/Wire/IO/Mem), (2) chisel3.Data type (relaxed for Mem)
       * 
       * @return Some(bindingType) if instrumentable, None otherwise
       */
     private def getChiselBinding(vd: ValDef): Option[String] = {
       try {
-        val isDataType = vd.symbol != null &&
-          vd.symbol.info != null &&
-          chiselSymbols.isSubtypeOfData(vd.symbol.info)
-
-        if (!isDataType) return None
-
         vd.rhs match {
           case Apply(fun, _) if fun.symbol != null =>
-            if (chiselSymbols.isRegInit(fun.symbol)) Some("Reg")
-            else if (chiselSymbols.isWire(fun.symbol)) Some("Wire")
-            else if (chiselSymbols.isIO(fun.symbol)) Some("IO")
-            else if (chiselSymbols.isMem(fun.symbol)) Some("Mem")
-            else None
+            // 1. Identify constructor type
+            val bindingOpt = 
+              if (chiselSymbols.isRegInit(fun.symbol)) Some("Reg")
+              else if (chiselSymbols.isWire(fun.symbol)) Some("Wire")
+              else if (chiselSymbols.isIO(fun.symbol)) Some("IO")
+              else if (chiselSymbols.isMem(fun.symbol)) Some("Mem")
+              else None
+
+            bindingOpt match {
+              case Some(binding) =>
+                // 2. Validate type compatibility
+                // We typically require subtype of Data, but strict check might fail for Mem
+                // in some compiler phases or versions. We allow Mem explicitly.
+                val isData = vd.symbol != null && 
+                             vd.symbol.info != null && 
+                             chiselSymbols.isSubtypeOfData(vd.symbol.info)
+
+                if (isData || binding == "Mem") Some(binding) else None
+                
+              case None => None
+            }
           case _ => None
         }
       } catch {
