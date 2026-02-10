@@ -46,57 +46,6 @@ scalacOptions += "-P:chiselplugin:genBundleElements",
 ```
 in the appropriate place.
 
-## Future work
-### Detecting Bundles with Seq[Data]
-Trying to have a `val Seq[Data]` (as opposed to a `val Vec[Data]` in a `Bundle` is a run time error.
-Here is a block of code that could be added to the plugin to detect this case at compile time (with some refinement in
-the detection mechanism):
-```scala
-  if (member.isAccessor && typeIsSeqOfData(member.tpe) && !isIgnoreSeqInBundle(bundleSymbol)) {
-    global.reporter.error(
-      member.pos,
-      s"Bundle.field ${bundleSymbol.name}.${member.name} cannot be a Seq[Data]. " +
-        "Use Vec or MixedVec or mix in trait IgnoreSeqInBundle"
-    )
-  }
-```
-### Notes about working on the `_elementsImpl` generator for the plugin in `BundleComponent.scala`
-In general the easiest way to develop and debug new code in the plugin is to use `println` statements.
-Naively this can result in reams of text that can be very hard to look through.
-
-What I found to be useful was creating some wrappers for `println` that only printed when the `Bundles` had a particular name pattern.
-- Create a regular expression string in the `BundleComponent` class
-- Add a printf wrapper name `show` that checks the `Bundle`'s name against the regex
-- For recursive code in `getAllBundleFields` create a different wrapper `indentShow` that indents debug lines
-- Sprinkle calls to these wrappers as needed for debugging
-
-#### Bundle Regex
-```scala
-    val bundleNameDebugRegex = "MyBundle.*"
-```
-#### Add `show` wrapper
-`show` should be inside `case bundle` block of the `transform` method in order to have access to the current `Bundle`
-
-```scala
-def show(string: => String): Unit = {
-  if (bundle.symbol.name.toString.matches(bundleNameDebugRegex)) {
-    println(string)
-  }
-}
-```
-#### Add `indentShow` wrapper
-This method can be added into `BundleComponent.scala` in the `transform` method after `case Bundle`
-Inside of `getAllBundleFields` I added the following code that indented for each recursion up the current
-`Bundle`'s hierarchy.
-```scala
-def indentShow(s: => String): Unit = {
-  val indentString = ("-" * depth) * 2 + ">  "
-  s.split("\n").foreach { line =>
-    show(indentString + line)
-  }
-}
-```
-
 ---
 
 # Chisel Debug Intrinsics Compiler Plugin
@@ -107,7 +56,7 @@ def indentShow(s: => String): Unit = {
 
 ```scala
 // build.sbt
-scalacOptions += "-P:chisel:addDebugIntrinsics"
+scalacOptions += "-P:chiselplugin:addDebugIntrinsics"
 ```
 
 ```bash
@@ -118,60 +67,30 @@ sbt run
 
 ## Architecture
 
-```
-User Code -> Plugin (AST transform) -> DebugIntrinsic.emit() -> Probe API -> FIRRTL -> CIRCT
-```
+`User Code -> Plugin (AST transform) -> DebugIntrinsic.emit() -> Probe API -> FIRRTL -> CIRCT`
 
 **Unified Implementation:**
 - Single source of truth: `DebugIntrinsic.emit()` with Probe API
-- Used by: Plugin (auto), User API (manual)
 - Strong binding: Survives DCE/CSE/inlining
 
 ## Supported Constructs
 
-| Construct | Binding | Example |
-|-----------|---------|----------|
-| `RegInit(...)` | `Reg` | `val state = RegInit(0.U)` |
-| `Wire(...)` | `Wire` | `val data = Wire(UInt(8.W))` |
-| `IO(...)` | `IO` | `val io = IO(new Bundle {...})` |
-| `Mem(...)` | `Mem` | `val mem = Mem(16, UInt(8.W))` |
+- `RegInit(...)` -> `Reg`
+- `Wire(...)` -> `Wire`
+- `IO(...)` -> `IO`
+- `Mem(...)` -> `Mem`
 
-All generate Probe-based FIRRTL:
-
-```firrtl
-wire _probe : Probe<UInt<8>>
-define(_probe, probe(signal))
-node _dbg = intrinsic(circt_debug_typeinfo<...>, read(_probe))
-```
-
-## Advanced Configuration
-
-| Option | Description |
-|--------|-------------|
-| `-P:chisel:verbose` | Verbose compilation logging |
-| `chisel.debug.verbose=true` | Verbose runtime debug output |
-
-**Environment Variables:**
-- `CHISEL_DEBUG=true` - Runtime flag to enable intrinsic emission
-- `CHISEL_PLUGIN_DEBUG_INTRINSICS=true` - Alternative plugin activation
+All generate Probe-based FIRRTL intrinsics.
 
 ## Development
 
-- **Plugin:** `plugin/src/main/scala/chisel3/internal/plugin/`
-- **Core:** `core/src/main/scala/chisel3/debuginternal/DebugIntrinsic.scala`
-- **User API:** `src/main/scala/chisel3/util/circt/DebugInfo.scala`
+**Environment Variables:**
+- `CHISEL_DEBUG=true`: Enable runtime intrinsic emission
+- `CHISEL_PLUGIN_DEBUG_INTRINSICS=true`: Alternative plugin activation
 
 ### Test Suite
 
 ```bash
-sbt "testOnly chiselTests.DebugIntrinsicsPluginSpec"
-sbt "testOnly chiselTests.DebugIntrinsicSpec"
+sbt "testOnly chiselTests.plugin.DebugIntrinsicsPluginSpec"
 sbt "testOnly chiselTests.DebugInfoIntegrationSpec"
 ```
-
-## References
-
-- [Chisel Probe API](https://www.chisel-lang.org/docs/explanations/probes)
-- [CIRCT Debug Dialect](https://circt.llvm.org/docs/Dialects/Debug/)
-- [Tywaves Viewer](https://github.com/rameloni/tywaves-chisel)
-- [User Guide](../src/main/scala/chisel3/util/circt/DebugInfo.scala) (scaladoc)
