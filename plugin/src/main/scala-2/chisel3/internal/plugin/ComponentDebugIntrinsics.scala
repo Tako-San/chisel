@@ -48,11 +48,12 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
             // Generate emission call
-            // Explicitly pass SourceInfo to ensure it's picked up correctly
+            // Fix: Use SourceLine explicitly instead of incorrectly calling macro materialize
+            // SourceLine(filename: String, line: Int, col: Int)
             val block = q"""{ 
               val $tempName = $transformedRHS;
               chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
-                chisel3.experimental.SourceInfo.materialize($sourcePath, $sourceLine)
+                chisel3.experimental.SourceLine($sourcePath, $sourceLine, 0)
               );
               $tempName 
             }"""
