@@ -43,13 +43,29 @@ class ComponentDebugIntrinsics(
   val runsAfter = List("typer")
   override val runsBefore = List("patmat")
   
+  private object chiselSymbols {
+    lazy val DataClass: ClassSymbol = rootMirror.getRequiredClass("chisel3.Data")
+    lazy val ModuleClass: ClassSymbol = rootMirror.getRequiredClass("chisel3.Module")
+    
+    private val RegInitMethods = Set("RegInit", "Reg", "RegNext")
+    private val WireMethods = Set("Wire", "WireInit", "WireDefault")
+    private val IOMethods = Set("IO")
+    private val MemMethods = Set("Mem", "SyncReadMem")
+    
+    def isSubtypeOfData(tpe: Type): Boolean = {
+      tpe <:< DataClass.tpe
+    }
+    
+    def isRegInit(sym: Symbol): Boolean = sym != null && RegInitMethods.contains(sym.name.toString)
+    def isWire(sym: Symbol): Boolean = sym != null && WireMethods.contains(sym.name.toString)
+    def isIO(sym: Symbol): Boolean = sym != null && IOMethods.contains(sym.name.toString)
+    def isMem(sym: Symbol): Boolean = sym != null && MemMethods.contains(sym.name.toString)
+  }
+  
   override def newTransformer(unit: CompilationUnit): Transformer = 
     new DebugIntrinsicsTransformer(unit)
   
   class DebugIntrinsicsTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
-    // Pass the correct global instance to ChiselSymbols
-    lazy val chiselSymbols = new ChiselSymbols(global)
-    
     override def transform(tree: Tree): Tree = {
       if (!plugin.addDebugIntrinsics) return super.transform(tree)
       
@@ -122,26 +138,4 @@ class ComponentDebugIntrinsics(
       }
     }
   }
-}
-
-class ChiselSymbols(val global: Global) {
-  import global._
-  
-  lazy val DataClass: ClassSymbol = rootMirror.getRequiredClass("chisel3.Data")
-  lazy val ModuleClass: ClassSymbol = rootMirror.getRequiredClass("chisel3.Module")
-  
-  private val RegInitMethods = Set("RegInit", "Reg", "RegNext")
-  private val WireMethods = Set("Wire", "WireInit", "WireDefault")
-  private val IOMethods = Set("IO")
-  private val MemMethods = Set("Mem", "SyncReadMem")
-  
-  /** Check if a type is a subtype of chisel3.Data safely within the same Global context */
-  def isSubtypeOfData(tpe: Type): Boolean = {
-    tpe <:< DataClass.tpe
-  }
-  
-  def isRegInit(sym: Symbol): Boolean = sym != null && RegInitMethods.contains(sym.name.toString)
-  def isWire(sym: Symbol): Boolean = sym != null && WireMethods.contains(sym.name.toString)
-  def isIO(sym: Symbol): Boolean = sym != null && IOMethods.contains(sym.name.toString)
-  def isMem(sym: Symbol): Boolean = sym != null && MemMethods.contains(sym.name.toString)
 }
