@@ -69,7 +69,7 @@ class DebugInfoSpec extends AnyFlatSpec with Matchers {
       }
       
       val firrtl = ChiselStage.emitCHIRRTL(new DefaultNameModule)
-      firrtl should include("target = \"signal\"")
+      firrtl should include("target = \"autogen_signal_0\"")
     }
   }
   

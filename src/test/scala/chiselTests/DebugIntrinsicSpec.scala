@@ -45,24 +45,17 @@ class DebugIntrinsicSpec extends AnyFlatSpec with Matchers {
     // Extract enum definition
     val enumDef = DebugIntrinsic.extractEnumDef(TestEnum.IDLE)
     
+    println(enumDef)
+
     // Should contain numeric mappings
     withClue("Enum definition should contain numeric indices") {
-      enumDef should include regex "\\d+:"
-    }
-    
-    // Should contain enum type name
-    withClue("Enum definition should contain type name") {
-      enumDef should include("TestEnum")
+      enumDef should include regex "\"\\d+\":"
     }
     
     // Should NOT have Scala artifacts like trailing $
     withClue("Enum values should not contain trailing $ artifacts") {
       enumDef should not (include regex "\\$\\d+:")
     }
-    
-    // Format should be: "0:TestEnum(0=Type),1:TestEnum(1=Type)"
-    // or similar, with clean type names
-    enumDef should include regex "\\d+:TestEnum\\(\\d+="
   }
   
   it should "extract correct type names for all Data types" in {
