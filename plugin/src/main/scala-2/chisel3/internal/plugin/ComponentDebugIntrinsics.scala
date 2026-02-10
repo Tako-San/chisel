@@ -15,21 +15,23 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
   def newTransformer(unit: CompilationUnit): Transformer = new DebugIntrinsicsTransformer(unit)
 
   class DebugIntrinsicsTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
-    // Skip test files to avoid LambdaLift crashes and access issues with private types
-    val shouldSkip = unit.source.path.contains("src/test") || 
-                     unit.source.path.contains("chiselTests") ||
-                     (unit.body match {
-                       case PackageDef(pid, _) => pid.toString == "chiselTests"
-                       case _ => false
-                     })
+    // Tests are crucial for verification, do not skip them!
+    val shouldSkip = false
+
+    def isPluginEnabled: Boolean = plugin.addDebugIntrinsics
 
     override def transform(tree: Tree): Tree = {
-      if (shouldSkip) {
+      if (shouldSkip || !isPluginEnabled) {
         return super.transform(tree)
       }
 
       tree match {
-        case vd @ ValDef(mods, name, tpt, rhs) if !mods.isSynthetic && !name.toString.startsWith("debug_tmp") && rhs.nonEmpty =>
+        case vd @ ValDef(mods, name, tpt, rhs) 
+          if !mods.isSynthetic && 
+             !name.toString.startsWith("debug_tmp") && 
+             !name.toString.startsWith("_probe") && 
+             rhs.nonEmpty =>
+          
           val isChiselData = try {
             val dataSym = rootMirror.getClassIfDefined("chisel3.Data")
             dataSym != NoSymbol && tpt.tpe != null && tpt.tpe <:< dataSym.tpe
@@ -39,19 +41,36 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
           if (isChiselData) {
             val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
-            // Do NOT use resetAttrs as it breaks access to private Chisel types.
-            // Using a Block wrapper for main code is generally safe from LambdaLift issues 
-            // compared to complex test code.
             val transformedRHS = transform(rhs)
             
-            // We use the block pattern: { val tmp = rhs; probe(tmp); tmp }
-            // Using chisel3.probe.probe as the hook.
-            val block = q"{ val $tempName = $transformedRHS; chisel3.probe.probe($tempName); $tempName }"
+            val binding = extractBinding(rhs)
+            val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
+            val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
+            
+            // Generate emission call
+            // Explicitly pass SourceInfo to ensure it's picked up correctly
+            val block = q"""{ 
+              val $tempName = $transformedRHS;
+              chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
+                chisel3.experimental.SourceInfo.materialize($sourcePath, $sourceLine)
+              );
+              $tempName 
+            }"""
             localTyper.typed(block)
           } else {
             super.transform(tree)
           }
         case _ => super.transform(tree)
+      }
+    }
+
+    private def extractBinding(rhs: Tree): String = {
+      rhs match {
+        case Apply(Select(_, TermName("RegInit" | "RegNext" | "Reg")), _) => "Reg"
+        case Apply(Select(_, TermName("Wire" | "WireInit" | "WireDefault")), _) => "Wire"
+        case Apply(Select(_, TermName("IO")), _) => "IO"
+        case Apply(Select(_, TermName("Mem")), _) => "Mem"
+        case _ => "Wire" // Default to Wire for unknown constructs that return Data
       }
     }
   }
