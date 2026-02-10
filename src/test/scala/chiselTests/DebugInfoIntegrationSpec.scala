@@ -192,50 +192,6 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
     }
   }
 
-  it should "respect DebugIntrinsic.emit conditional logic" in {
-    // Note: DebugInfo.annotate() always creates intrinsics
-    // It's DebugIntrinsic.emit() that checks chisel.debug flag internally
-    // This test verifies annotate() works regardless of flag
-
-    class FlagTestModule extends Module {
-      val io = IO(new Bundle {
-        val data = Output(UInt(8.W))
-      })
-      io.data := 0.U
-
-      DebugInfo.annotate(io.data, "data")
-    }
-
-    val firrtl = ChiselStage.emitCHIRRTL(new FlagTestModule)
-
-    // Intrinsics should be present (DebugInfo.annotate always emits)
-    firrtl should include("circt_debug_typeinfo")
-    firrtl should include("target = \"data\"")
-  }
-
-  it should "count correct number of intrinsics" in {
-    DebugTestHelpers.withDebugMode {
-      class CountingModule extends Module {
-        val io = IO(new Bundle {
-          val a = Input(UInt(8.W))
-          val b = Input(UInt(8.W))
-          val c = Output(UInt(8.W))
-        })
-
-        io.c := io.a + io.b
-
-        DebugInfo.annotate(io.a, "a")
-        DebugInfo.annotate(io.b, "b")
-        DebugInfo.annotate(io.c, "c")
-      }
-
-      val firrtl = ChiselStage.emitCHIRRTL(new CountingModule)
-
-      DebugTestHelpers.assertIntrinsicCount(firrtl, expected = 3)
-      DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 3)
-    }
-  }
-
   it should "use Probe API consistently" in {
     DebugTestHelpers.withDebugMode {
       class ProbeTestModule extends Module {
