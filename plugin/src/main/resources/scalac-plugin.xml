@@ -1,4 +1,0 @@
-<plugin>
-  <name>chisel-debug</name>
-  <classname>chisel3.internal.plugin.ChiselPlugin</classname>
-</plugin>
