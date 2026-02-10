@@ -8,10 +8,6 @@ import circt.stage.ChiselStage
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-/**
-  * End-to-end integration tests for DebugInfo pipeline
-  * Tests the full flow: Chisel -> FIRRTL intrinsics -> expected output
-  */
 class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
   behavior of "DebugInfo End-to-End Pipeline"
@@ -29,7 +25,6 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
           val out = Output(new CompleteBundle(16))
         })
 
-        // Test all annotation patterns
         DebugInfo.annotate(io.in, "io.in")
         DebugInfo.annotateRecursive(io.out, "io.out")
 
@@ -42,23 +37,18 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new IntegrationModule)
 
-      // Verify intrinsic structure
       firrtl should include("intrinsic(circt_debug_typeinfo")
 
-      // Verify all annotated signals present
       firrtl should include("target = \"io.in\"")
       firrtl should include("target = \"io.out\"")
       firrtl should include("target = \"stateReg\"")
 
-      // Verify recursive annotation of io.out
       firrtl should include("target = \"io.out.valid\"")
       firrtl should include("target = \"io.out.data\"")
 
-      // Verify Bundle type name (cleaned, no $N suffix)
       firrtl should include("typeName = \"CompleteBundle\"")
       firrtl should include("parameters = \"dataWidth=16\"")
 
-      // Verify source locations present
       firrtl should include("sourceFile")
       firrtl should include("sourceLine")
 
@@ -81,11 +71,9 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new EnumIntegrationModule)
 
-      // Verify enum handling (cleaned name, no $N suffix)
       firrtl should include("typeName = \"FsmState\"")
       firrtl should include("enumDef")
 
-      // Verify enum values appear (in some form)
       val hasEnumValues =
         firrtl.contains("IDLE") ||
           firrtl.contains("FETCH") ||
@@ -107,19 +95,15 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
       class SimpleModule extends Module {
         val io = IO(new MemRequest)
-
-        // Annotate recursively to verify traversal
         DebugInfo.annotateRecursive(io, "io")
       }
 
       val firrtl = ChiselStage.emitCHIRRTL(new SimpleModule)
 
-      // Verify root and children
       firrtl should include("target = \"io\"")
       firrtl should include("target = \"io.addr\"")
       firrtl should include("target = \"io.data\"")
       
-      // Verify types
       firrtl should include("typeName = \"MemRequest\"")
       firrtl should include("typeName = \"UInt\"")
 
@@ -135,13 +119,11 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
         })
 
         io.data := VecInit(Seq.fill(4)(0.U))
-
         DebugInfo.annotate(io.data, "io.data")
       }
 
       val firrtl = ChiselStage.emitCHIRRTL(new VecModule)
 
-      // Verify Vec metadata
       firrtl should include("typeName = \"Vec\"")
       firrtl should include("target = \"io.data\"")
 
@@ -165,7 +147,6 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new MultiModule)
 
-      // Verify both annotations present
       firrtl should include("target = \"input\"")
       firrtl should include("target = \"output\"")
 
@@ -188,7 +169,6 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new ValidModule)
 
-      // Basic sanity checks
       firrtl should include("module ValidModule")
       firrtl should include("circt_debug_typeinfo")
       firrtl should include("target = \"operand\"")
@@ -218,10 +198,8 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new ProbeTestModule)
 
-      withClue("CRITICAL: Probe API must be used for all intrinsics") {
-        DebugTestHelpers.assertIntrinsicCount(firrtl, expected = 3)
-        DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 3)
-      }
+      DebugTestHelpers.assertIntrinsicCount(firrtl, expected = 3)
+      DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 3)
     }
   }
 
@@ -231,18 +209,14 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
       io.out := 0.U
     }
 
-    // Set initial state
     sys.props("chisel.debug") = "false"
     val initialState = sys.props.get("chisel.debug")
 
-    // Emit with debug (should temporarily enable)
     val _ = DebugInfo.emitCHIRRTL(new StateTestModule)
 
-    // Verify state restored
     val finalState = sys.props.get("chisel.debug")
     finalState shouldBe initialState
 
-    // Cleanup
     sys.props.remove("chisel.debug")
   }
 
@@ -280,7 +254,6 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new ThesisDemoModule)
 
-      // Print for documentation
       val intrinsics = firrtl.split("\n").filter(_.contains("intrinsic(circt_debug_typeinfo"))
 
       println("\n" + "=" * 70)
