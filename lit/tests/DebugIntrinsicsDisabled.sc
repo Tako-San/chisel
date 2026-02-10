@@ -7,6 +7,7 @@
 // RUN:   --scala-version=%SCALAVERSION \
 // RUN:   --scala-option="-Xplugin:%SCALAPLUGINJARS" \
 // RUN:   --scala-option="-P:chiselplugin:addDebugIntrinsics" \
+// RUN:   --scala-option "-Xprint:componentDebugIntrinsics" \
 // RUN:   %s | FileCheck %s
 
 import chisel3._
