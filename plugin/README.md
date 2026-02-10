@@ -46,6 +46,57 @@ scalacOptions += "-P:chiselplugin:genBundleElements",
 ```
 in the appropriate place.
 
+## Future work
+### Detecting Bundles with Seq[Data]
+Trying to have a `val Seq[Data]` (as opposed to a `val Vec[Data]` in a `Bundle` is a run time error.
+Here is a block of code that could be added to the plugin to detect this case at compile time (with some refinement in
+the detection mechanism):
+```scala
+  if (member.isAccessor && typeIsSeqOfData(member.tpe) && !isIgnoreSeqInBundle(bundleSymbol)) {
+    global.reporter.error(
+      member.pos,
+      s"Bundle.field ${bundleSymbol.name}.${member.name} cannot be a Seq[Data]. " +
+        "Use Vec or MixedVec or mix in trait IgnoreSeqInBundle"
+    )
+  }
+```
+### Notes about working on the `_elementsImpl` generator for the plugin in `BundleComponent.scala`
+In general the easiest way to develop and debug new code in the plugin is to use `println` statements.
+Naively this can result in reams of text that can be very hard to look through.
+
+What I found to be useful was creating some wrappers for `println` that only printed when the `Bundles` had a particular name pattern.
+- Create a regular expression string in the `BundleComponent` class
+- Add a printf wrapper name `show` that checks the `Bundle`'s name against the regex
+- For recursive code in `getAllBundleFields` create a different wrapper `indentShow` that indents debug lines
+- Sprinkle calls to these wrappers as needed for debugging
+
+#### Bundle Regex
+```scala
+    val bundleNameDebugRegex = "MyBundle.*"
+```
+#### Add `show` wrapper
+`show` should be inside `case bundle` block of the `transform` method in order to have access to the current `Bundle`
+
+```scala
+def show(string: => String): Unit = {
+  if (bundle.symbol.name.toString.matches(bundleNameDebugRegex)) {
+    println(string)
+  }
+}
+```
+#### Add `indentShow` wrapper
+This method can be added into `BundleComponent.scala` in the `transform` method after `case Bundle`
+Inside of `getAllBundleFields` I added the following code that indented for each recursion up the current
+`Bundle`'s hierarchy.
+```scala
+def indentShow(s: => String): Unit = {
+  val indentString = ("-" * depth) * 2 + ">  "
+  s.split("\n").foreach { line =>
+    show(indentString + line)
+  }
+}
+```
+
 ---
 
 # Chisel Debug Intrinsics Compiler Plugin
