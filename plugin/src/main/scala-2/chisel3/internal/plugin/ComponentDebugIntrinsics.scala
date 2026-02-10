@@ -99,15 +99,16 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
             // Transform RHS first
             val transformedRHS = transform(rhs)
 
-            // Create temp name for inline block
+            // Create temp name
             val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
 
-            // Build inline block WITHOUT creating new symbol in currentOwner
-            // Let localTyper figure out the symbol when typing the block
+            // Force PRIVATE | LOCAL to prevent accessor generation in DelayedInit (App/Script)
+            // SYNTHETIC is kept to mark it as compiler-generated
+            val tempMods = Modifiers(PRIVATE | LOCAL | SYNTHETIC)
+
             val inlineBlock = Block(
               List(
-                // Untyped ValDef - localTyper will create symbol
-                ValDef(Modifiers(SYNTHETIC), tempName, TypeTree(), transformedRHS)
+                ValDef(tempMods, tempName, TypeTree(), transformedRHS)
               ),
               Block(
                 List(
@@ -117,15 +118,11 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
               )
             )
 
-            // Type the entire block - this creates all symbols in proper scope
             val typedBlock = localTyper.typed(inlineBlock)
-
-            // Return ValDef with typed block as RHS
             treeCopy.ValDef(vd, mods, name, tpt, typedBlock)
 
           } catch {
             case e: Throwable =>
-              // Fallback: return original tree
               if (sys.props.get("chisel.debug.verbose").exists(_.toLowerCase == "true")) {
                 Console.err.println(s"[ComponentDebugIntrinsics] Skipping ${name}: ${e.getMessage}")
               }
