@@ -52,8 +52,11 @@ object DebugInfo {
     */
   def isEnabled: Boolean = chisel3.debuginternal.DebugIntrinsic.isEnabled
 
+  // Atomic counter for unique default names to prevent collisions
+  private val _autoNameCounter = new java.util.concurrent.atomic.AtomicLong(0)
+
   private def getTargetName(name: String): String =
-    if (name.nonEmpty) name else "signal"
+    if (name.nonEmpty) name else s"autogen_signal_${_autoNameCounter.getAndIncrement()}"
 
   /** Annotate a signal with debug metadata.
     *
@@ -62,7 +65,8 @@ object DebugInfo {
     * Automatically checks if debug mode is enabled (no manual check needed).
     *
     * @param signal Hardware signal to annotate (must be chisel3.Data)
-    * @param name Hierarchical path (e.g., "io.ctrl.valid")
+    * @param name Hierarchical path (e.g., "io.ctrl.valid").
+    *             If empty, generates unique "autogen_signal_N" name.
     * @param sourceInfo Source location (auto-provided by compiler)
     * @return Original signal (chainable)
     *
@@ -91,7 +95,8 @@ object DebugInfo {
     * Automatically checks if debug mode is enabled (no manual check needed).
     *
     * @param signal Root signal to annotate
-    * @param name Hierarchical prefix (children get "parent.child" names)
+    * @param name Hierarchical prefix (children get "parent.child" names).
+    *             If empty, generates unique "autogen_signal_N" root.
     * @param sourceInfo Source location (auto-provided)
     * @return Original signal (chainable)
     *
