@@ -18,7 +18,7 @@ import circt.stage.ChiselStage
 // CHECK-LABEL: module RegInitTest :
 class RegInitTest extends Module {
   val state = RegInit(0.U(8.W))
-  
+
   // CHECK: wire [[PROBE_STATE:_.*]] : Probe<UInt<8>>
   // CHECK: define([[PROBE_STATE]], probe(state))
   // CHECK: intrinsic(circt_debug_typeinfo<
@@ -40,7 +40,7 @@ println(ChiselStage.emitCHIRRTL(new RegInitTest))
 class WireTest extends Module {
   val temp = Wire(UInt(16.W))
   temp := 0.U
-  
+
   // CHECK: wire [[PROBE_TEMP:_.*]] : Probe<UInt<16>>
   // CHECK: define([[PROBE_TEMP]], probe(temp))
   // CHECK: intrinsic(circt_debug_typeinfo<
@@ -64,7 +64,7 @@ class IOTest extends Module {
     val out = Output(UInt(32.W))
   })
   io.out := io.in
-  
+
   // CHECK: wire [[PROBE_IO:_.*]] : Probe<
   // CHECK: define([[PROBE_IO]], probe(io))
   // CHECK: intrinsic(circt_debug_typeinfo<
@@ -86,16 +86,16 @@ class MultiSignalTest extends Module {
   val reg1 = RegInit(0.U(8.W))
   val reg2 = RegInit(0.U(8.W))
   val wire1 = Wire(UInt(8.W))
-  
+
   wire1 := io.in
   reg1 := wire1
   reg2 := reg1
-  
+
   // CHECK-DAG: target = "io"
   // CHECK-DAG: target = "reg1"
   // CHECK-DAG: target = "reg2"
   // CHECK-DAG: target = "wire1"
-  
+
   // CHECK-COUNT-4: intrinsic(circt_debug_typeinfo
   // CHECK-COUNT-4: read(
 }
@@ -111,15 +111,15 @@ println(ChiselStage.emitCHIRRTL(new MultiSignalTest))
 class ClosureTest extends Module {
   val cond = IO(Input(Bool()))
   val out = IO(Output(UInt(8.W)))
-  
+
   out := 0.U
-  
+
   when(cond) {
     val r = RegInit(0.U(8.W))
     r := 1.U
     out := r
   }
-  
+
   // CHECK: wire [[PROBE_R:_.*]] : Probe<UInt<8>>
   // CHECK: define([[PROBE_R]], probe({{r|_.*}}))
   // CHECK: intrinsic(circt_debug_typeinfo<
@@ -143,7 +143,7 @@ object CpuState extends ChiselEnum {
 class EnumTest extends Module {
   val state = RegInit(CpuState.sIDLE)
   state := CpuState.sFETCH
-  
+
   // CHECK: wire [[PROBE_STATE:_.*]] : Probe<
   // CHECK: define([[PROBE_STATE]], probe(state))
   // CHECK: intrinsic(circt_debug_typeinfo<

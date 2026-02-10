@@ -103,7 +103,7 @@ class DebugInfoIntegrationSpec extends AnyFlatSpec with Matchers {
       firrtl should include("target = \"io\"")
       firrtl should include("target = \"io.addr\"")
       firrtl should include("target = \"io.data\"")
-      
+
       firrtl should include("typeName = \"MemRequest\"")
       firrtl should include("typeName = \"UInt\"")
 

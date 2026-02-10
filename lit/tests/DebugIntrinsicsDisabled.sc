@@ -17,7 +17,7 @@ class DisabledTest extends Module {
   val state = RegInit(0.U(8.W))
   val temp = Wire(UInt(8.W))
   val io = IO(new Bundle { val out = Output(UInt(8.W)) })
-  
+
   temp := state
   io.out := temp
 }

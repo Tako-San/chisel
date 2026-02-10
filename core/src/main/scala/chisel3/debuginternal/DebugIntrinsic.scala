@@ -124,7 +124,7 @@ object DebugIntrinsic {
 
     data match {
       case e: EnumType => baseParams :+ ("enumDef" -> StringParam(extractEnumDef(e)))
-      case _           => baseParams
+      case _ => baseParams
     }
   }
 
