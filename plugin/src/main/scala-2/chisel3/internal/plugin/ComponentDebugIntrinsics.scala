@@ -40,6 +40,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
           }
 
           if (isChiselData) {
+            // 1. Create unique temporary variable name
             val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
             val transformedRHS = transform(rhs)
             
@@ -47,19 +48,59 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // Fix: Use an IIFE (Immediately Invoked Function Expression) to safely bind the temporary variable.
-            // This prevents the compiler from trying to lift 'debug_tmp' into a class field, which causes 'Unexpected tree in genLoad'.
-            // Structure: ((debug_tmp: T) => { emit(debug_tmp); debug_tmp })(rhs)
+            // 2. Create temporary ValDef: val debug_tmp$N = rhs
+            val tempValDef = ValDef(
+              Modifiers(Flag.SYNTHETIC),
+              tempName,
+              TypeTree(tpt.tpe),
+              transformedRHS
+            ).setPos(rhs.pos)
+
+            // 3. Build the emit call: DebugIntrinsic.emit(debug_tmp, "name", "binding")(SourceLine(...))
+            val debugIntrinsicModule = rootMirror.getModuleIfDefined("chisel3.debuginternal.DebugIntrinsic")
+            val sourceLineClass = rootMirror.getClassIfDefined("chisel3.experimental.SourceLine")
             
-            val newRhs = q"""(( $tempName: $tpt ) => {
-              chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
-                chisel3.experimental.SourceLine($sourcePath, $sourceLine, 0)
-              );
-              $tempName 
-            })($transformedRHS)"""
+            val emitCall = if (debugIntrinsicModule != NoSymbol && sourceLineClass != NoSymbol) {
+              Apply(
+                Apply(
+                  Select(
+                    Ident(debugIntrinsicModule),
+                    TermName("emit")
+                  ),
+                  List(
+                    Ident(tempName),
+                    Literal(Constant(name.toString)),
+                    Literal(Constant(binding))
+                  )
+                ),
+                List(
+                  Apply(
+                    Select(Ident(sourceLineClass.companionModule), TermName("apply")),
+                    List(
+                      Literal(Constant(sourcePath)),
+                      Literal(Constant(sourceLine)),
+                      Literal(Constant(0))
+                    )
+                  )
+                )
+              ).setPos(tree.pos)
+            } else {
+              // Fallback: just return the temp ident if symbols not found
+              Ident(tempName).setPos(tree.pos)
+            }
             
-            val newValDef = treeCopy.ValDef(vd, mods, name, tpt, newRhs)
-            localTyper.typed(newValDef)
+            // 4. Create Block: { val debug_tmp = rhs; emit(debug_tmp, ...); debug_tmp }
+            val newBlock = Block(
+              List(tempValDef, emitCall),
+              Ident(tempName).setPos(tree.pos)
+            ).setPos(tree.pos)
+            
+            // 5. Type the block
+            val typedBlock = localTyper.typed(newBlock)
+            
+            // 6. Return updated ValDef with the new block as RHS
+            val newValDef = treeCopy.ValDef(vd, mods, name, tpt, typedBlock)
+            newValDef
           } else {
             super.transform(tree)
           }
