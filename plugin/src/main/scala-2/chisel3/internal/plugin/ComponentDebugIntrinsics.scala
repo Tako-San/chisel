@@ -126,12 +126,17 @@ class ComponentDebugIntrinsics(
 
       try {
         val transformedRHS = super.transform(rhs)
+        // CRITICAL FIX: Reset attributes (types/symbols) of the RHS before grafting it 
+        // into a new block. This forces re-typing, preventing symbol ownership issues
+        // (LambdaLift errors) when the RHS contains closures or nested definitions.
+        val resetRHS = global.resetAttrs(transformedRHS)
+        
         val tmpName = TermName(s"_debug_tmp_${name.toString}")
 
         val instrumentedBlock = localTyper.typed {
           q"""
             {
-              val $tmpName = $transformedRHS
+              val $tmpName = $resetRHS
               _root_.chisel3.debuginternal.DebugIntrinsic.emit(
                 $tmpName,
                 ${name.toString},
