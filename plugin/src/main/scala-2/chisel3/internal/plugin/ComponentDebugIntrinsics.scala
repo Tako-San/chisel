@@ -93,17 +93,18 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
           val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
           val transformedRHS = transform(rhs)
 
-          // Create stable value symbol WITHOUT modifying scopes
-          val tempSym = currentOwner.newValue(tempName, vd.pos, SYNTHETIC)
+          // Type the RHS first to get proper type info
           val typedRHS = localTyper.typed(transformedRHS)
+
+          // Create symbol with known type
+          val tempSym = currentOwner.newValue(tempName, vd.pos, SYNTHETIC)
           tempSym.setInfo(typedRHS.tpe)
 
-          // DO NOT call currentOwner.info.decls.enter(tempSym) - causes EmptyScope.enter error
-
-          val tempValDef = localTyper.typed(ValDef(tempSym, typedRHS)).setPos(vd.pos)
+          // Build untyped trees - let localTyper resolve symbols within block context
+          val tempValDef = ValDef(tempSym, typedRHS).setPos(vd.pos)
           val emitCall = createEmitCall(tempSym, name.toString, extractBinding(rhs), vd.pos)
 
-          // Create and type the block explicitly
+          // Type the complete block as a unit - symbols resolved in context
           val block = localTyper.typed(
             Block(
               List(tempValDef, emitCall),
