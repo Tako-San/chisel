@@ -48,16 +48,24 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
             val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
             val transformedRHS = transform(rhs)
 
-            // 2. Create a local ValDef for the temporary variable
-            // val debug_tmp = rhs
-            // We use TypeTree() to let the localTyper infer the type from rhs
-            val tempValDef = ValDef(Modifiers(NoFlags), tempName, TypeTree(), transformedRHS).setPos(tree.pos)
+            // 2. Create a Symbol for the temporary variable
+            // IMPORTANT: explicitly set owner to currentOwner (the method/block we are in)
+            // so it is treated as a local variable, not a class member.
+            val tempSym = currentOwner.newVariable(tree.pos, tempName)
+
+            // We need to type the RHS to get its type for the symbol
+            // Since we are in TypingTransformer, we can use localTyper
+            val typedRHS = localTyper.typed(transformedRHS)
+            tempSym.setInfo(typedRHS.tpe)
+
+            // 3. Create the ValDef with the explicit symbol
+            val tempValDef = ValDef(tempSym, typedRHS).setPos(tree.pos)
 
             val binding = extractBinding(rhs)
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
 
-            // 3. Build the emit call: DebugIntrinsic.emit(debug_tmp, "name", "binding")(SourceLine(...))
+            // 4. Build the emit call: DebugIntrinsic.emit(debug_tmp, ...)
             val debugIntrinsicModule = rootMirror.getModuleIfDefined("chisel3.debuginternal.DebugIntrinsic")
             val sourceLineClass = rootMirror.getClassIfDefined("chisel3.experimental.SourceLine")
 
@@ -69,7 +77,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
                     TermName("emit")
                   ),
                   List(
-                    Ident(tempName), // Refers to the local ValDef
+                    Ident(tempSym).setPos(tree.pos), // Use symbol directly
                     Literal(Constant(name.toString)),
                     Literal(Constant(binding))
                   )
@@ -86,22 +94,19 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
                 )
               ).setPos(tree.pos)
             } else {
-              // Fallback if intrinsics not found
               EmptyTree
             }
 
-            // 4. Create Block: { val debug_tmp = rhs; emit(debug_tmp, ...); debug_tmp }
-            // Using Block ensures debug_tmp is treated as a local variable.
+            // 5. Create Block: { val debug_tmp = rhs; emit(debug_tmp); debug_tmp }
+            // The Block itself needs to be typed to have the correct type (same as original ValDef)
             val block = Block(
               List(tempValDef, emitCall),
-              Ident(tempName).setPos(tree.pos)
+              Ident(tempSym).setPos(tree.pos)
             ).setPos(tree.pos)
 
-            // 5. Type the block
-            // This assigns the Symbol of tempValDef to the Ident(tempName) usages correctly.
             val typedBlock = localTyper.typed(block)
 
-            // 6. Return updated ValDef with the block as RHS
+            // 6. Return updated ValDef
             val newValDef = treeCopy.ValDef(vd, mods, name, tpt, typedBlock)
             newValDef
           } else {
@@ -117,7 +122,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
         case Apply(Select(_, TermName("Wire" | "WireInit" | "WireDefault")), _) => "Wire"
         case Apply(Select(_, TermName("IO")), _)                                => "IO"
         case Apply(Select(_, TermName("Mem")), _)                               => "Mem"
-        case _ => "Wire" // Default to Wire for unknown constructs that return Data
+        case _                                                                  => "Wire"
       }
     }
   }
