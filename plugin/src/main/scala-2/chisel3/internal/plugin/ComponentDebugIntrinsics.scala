@@ -5,7 +5,7 @@ import scala.tools.nsc.{Global, Phase}
 import scala.tools.nsc.plugins.PluginComponent
 import scala.tools.nsc.transform.{TypingTransformers, Transform}
 
-class ComponentDebugIntrinsics(val global: Global) extends PluginComponent with TypingTransformers with Transform {
+class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends PluginComponent with TypingTransformers with Transform {
   import global._
 
   val phaseName: String = "componentDebugIntrinsics"
