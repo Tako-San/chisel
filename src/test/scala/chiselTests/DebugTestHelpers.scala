@@ -10,7 +10,7 @@ import scala.util.matching.Regex
   * Prevents duplication of validation logic across test suites.
   */
 object DebugTestHelpers {
-  
+
   /** Execute a block with debug mode temporarily enabled.
     * 
     * Ensures system property is cleaned up even if block fails.
@@ -25,31 +25,32 @@ object DebugTestHelpers {
     * Prevents duplication and typos across test files.
     */
   object Patterns {
+
     /** Probe wire declaration: wire _WIRE : Probe<UInt<8>> */
     val ProbeDeclaration: Regex = """wire\s+(\w+)\s*:\s*Probe<.+>""".r
-    
+
     /** Probe definition: define _WIRE = probe(signal) */
     val ProbeDefine: Regex = """define\s+(\w+)\s*=\s*probe\((.+?)\)""".r
-    
+
     /** Probe read in intrinsic: intrinsic(..., read(_WIRE)) */
     val ProbeRead: Regex = """intrinsic\(circt_debug_typeinfo.*read\((\w+)\)""".r
-    
+
     /** Weak binding anti-pattern: intrinsic with operand but no read() */
     val WeakBinding: Regex = """intrinsic\(circt_debug_typeinfo[^)]*\)\([^r]""".r
-    
+
     /** Intrinsics with read() operands - matches entire intrinsic statement containing read() */
     val IntrinsicsWithRead: Regex = """intrinsic\(circt_debug_typeinfo[^@]*read\(""".r
-    
+
     /** Generic Probe type presence */
     val ProbeType: Regex = """Probe<""".r
-    
+
     /** Intrinsic presence */
     val DebugIntrinsic: Regex = """circt_debug_typeinfo""".r
-    
+
     /** Target parameter extraction */
     val Target: Regex = """target\s*=\s*"([^"]+)"""".r
   }
-  
+
   /** Assert that FIRRTL uses Probe API correctly for debug intrinsics.
     * 
     * Guards against regression to weak binding (direct signal reference).
@@ -71,42 +72,44 @@ object DebugTestHelpers {
       intrinsicCount >= minIntrinsics,
       s"Expected at least $minIntrinsics intrinsics, found $intrinsicCount"
     )
-    
+
     assert(
       Patterns.ProbeType.findFirstIn(firrtl).isDefined,
       "Missing Probe type declarations - weak binding detected!"
     )
-    
+
     val defineCount = Patterns.ProbeDefine.findAllIn(firrtl).length
     assert(
       defineCount >= minIntrinsics,
       s"Only $defineCount define statements for $intrinsicCount intrinsics (expected at least $minIntrinsics)"
     )
-    
+
     val readCount = "read\\(".r.findAllIn(firrtl).length
     assert(
       readCount >= minIntrinsics,
       s"Only $readCount read() calls for $intrinsicCount intrinsics (expected at least $minIntrinsics)"
     )
-    
+
     // Validate intrinsics use read() - more flexible matching
     val intrinsicsWithRead = Patterns.IntrinsicsWithRead.findAllIn(firrtl).length
-    
+
     // Debug output when assertion fails
     if (intrinsicsWithRead < minIntrinsics) {
       val allIntrinsics = """intrinsic\(circt_debug_typeinfo[^@]*\) @""".r.findAllIn(firrtl).toList
-      System.err.println(s"\n=== DEBUG: Found $intrinsicsWithRead intrinsics with read() out of $intrinsicCount total ===")
+      System.err.println(
+        s"\n=== DEBUG: Found $intrinsicsWithRead intrinsics with read() out of $intrinsicCount total ==="
+      )
       System.err.println(s"Expected at least: $minIntrinsics")
       System.err.println(s"\nAll intrinsic statements:")
       allIntrinsics.take(5).foreach(i => System.err.println(s"  $i"))
     }
-    
+
     assert(
       intrinsicsWithRead >= minIntrinsics,
       s"Only $intrinsicsWithRead out of $intrinsicCount intrinsics use read() - weak binding detected!"
     )
   }
-  
+
   /** Assert that no weak binding patterns exist in FIRRTL.
     * 
     * Weak binding = intrinsic uses direct signal reference instead of probe:
@@ -127,7 +130,7 @@ object DebugTestHelpers {
          |""".stripMargin
     )
   }
-  
+
   /** Assert exact number of debug intrinsics in FIRRTL.
     * 
     * Use when test expects precise instrumentation count.
@@ -143,7 +146,7 @@ object DebugTestHelpers {
       s"Expected exactly $expected intrinsics, found $actual"
     )
   }
-  
+
   /** Extract all debug intrinsic targets from FIRRTL.
     * 
     * @param firrtl FIRRTL output
@@ -152,7 +155,7 @@ object DebugTestHelpers {
   def extractTargets(firrtl: String): Set[String] = {
     Patterns.Target.findAllMatchIn(firrtl).map(_.group(1)).toSet
   }
-  
+
   /** Extract all probe wire names from FIRRTL.
     * 
     * @param firrtl FIRRTL output

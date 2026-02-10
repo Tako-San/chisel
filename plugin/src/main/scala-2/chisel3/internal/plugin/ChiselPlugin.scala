@@ -9,7 +9,7 @@ import scala.reflect.internal.util.NoPosition
 import scala.collection.mutable
 
 private[plugin] case class ChiselPluginArguments(
-  val skipFiles: mutable.HashSet[String] = mutable.HashSet.empty,
+  val skipFiles:          mutable.HashSet[String] = mutable.HashSet.empty,
   var addDebugIntrinsics: Boolean = false
 ) {
   def useBundlePluginOpt = "useBundlePlugin"
@@ -88,15 +88,15 @@ class ChiselPlugin(val global: Global) extends Plugin {
         error(s"Option not understood: '$option'")
       }
     }
-    
+
     // Also check environment variable for debug intrinsics
     if (sys.env.get("CHISEL_PLUGIN_DEBUG_INTRINSICS").exists(_.toLowerCase == "true")) {
       arguments.addDebugIntrinsics = true
     }
-    
+
     true
   }
-  
+
   /** Check if debug intrinsics generation is enabled */
   def addDebugIntrinsics: Boolean = arguments.addDebugIntrinsics
 }

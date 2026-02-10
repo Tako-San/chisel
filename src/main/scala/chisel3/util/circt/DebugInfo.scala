@@ -204,7 +204,7 @@ object DebugInfo {
     * @see [[emitSystemVerilog]] for direct Verilog output
     */
   def emitCHIRRTL(
-    gen: => RawModule,
+    gen:  => RawModule,
     args: Array[String] = Array.empty
   ): String = {
     chisel3.debuginternal.DebugIntrinsic.withDebugMode {

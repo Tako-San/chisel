@@ -3,7 +3,7 @@
 package chisel3.debuginternal
 
 import chisel3._
-import chisel3.probe.{Probe, ProbeValue, define, read}
+import chisel3.probe.{define, read, Probe, ProbeValue}
 import chisel3.experimental.SourceInfo
 import scala.util.control.NonFatal
 import scala.collection.concurrent.TrieMap
@@ -62,8 +62,8 @@ object DebugIntrinsic {
     * @return Some(Unit) if emitted, None if disabled or failed gracefully
     */
   def emit(
-    data: Data,
-    target: String,
+    data:    Data,
+    target:  String,
     binding: String
   )(implicit sourceInfo: SourceInfo): Option[Unit] = {
     if (!isEnabled) return None
@@ -71,9 +71,9 @@ object DebugIntrinsic {
   }
 
   private def emitImpl(
-    data: Data,
-    target: String,
-    binding: String,
+    data:       Data,
+    target:     String,
+    binding:    String,
     sourceInfo: SourceInfo
   ): Option[Unit] = {
     val params = buildIntrinsicParams(data, target, binding, sourceInfo)
@@ -88,8 +88,8 @@ object DebugIntrinsic {
     * @param binding Signal type
     */
   def emitRecursive(
-    data: Data,
-    target: String,
+    data:    Data,
+    target:  String,
     binding: String
   )(implicit sourceInfo: SourceInfo): Option[Unit] = {
     if (!isEnabled) return None
@@ -97,9 +97,9 @@ object DebugIntrinsic {
   }
 
   private def emitRecursiveImpl(
-    data: Data,
-    target: String,
-    binding: String,
+    data:       Data,
+    target:     String,
+    binding:    String,
     sourceInfo: SourceInfo
   ): Option[Unit] = {
     emitImpl(data, target, binding, sourceInfo)
@@ -116,7 +116,7 @@ object DebugIntrinsic {
   }
 
   private def emitProbeIntrinsic(
-    data: Data,
+    data:   Data,
     params: Seq[(String, Param)],
     target: String
   )(implicit sourceInfo: SourceInfo): Option[Unit] = {
@@ -130,7 +130,7 @@ object DebugIntrinsic {
         // CRITICAL: Probe API infrastructure failure -> fail fast
         if (e.getMessage != null && e.getMessage.contains("Probe")) {
           Console.err.println(s"[DebugIntrinsic] CRITICAL: Probe API failure for '$target': ${e.getMessage}")
-          throw e  // Re-throw to fail fast
+          throw e // Re-throw to fail fast
         }
 
         // Non-critical: Graceful degradation for other errors
@@ -142,9 +142,9 @@ object DebugIntrinsic {
   }
 
   private def buildIntrinsicParams(
-    data: Data,
-    target: String,
-    binding: String,
+    data:       Data,
+    target:     String,
+    binding:    String,
     sourceInfo: SourceInfo
   ): Seq[(String, Param)] = {
     val typeName = extractTypeName(data)
@@ -186,13 +186,13 @@ object DebugIntrinsic {
     */
   def extractTypeName(data: Data): String = {
     data match {
-      case _: Bool => "Bool"
-      case _: UInt => "UInt"  // Bool already matched above
-      case _: SInt => "SInt"
-      case _: Clock => "Clock"
+      case _: Bool       => "Bool"
+      case _: UInt       => "UInt" // Bool already matched above
+      case _: SInt       => "SInt"
+      case _: Clock      => "Clock"
       case _: AsyncReset => "AsyncReset"
-      case _: Reset => "Reset"  // AsyncReset already matched above
-      case _: Vec[_] => "Vec"
+      case _: Reset      => "Reset" // AsyncReset already matched above
+      case _: Vec[_]     => "Vec"
       case e: EnumType =>
         ScalaArtifacts.cleanTypeName(e.factory.getClass.getSimpleName, stripTypeSuffix = true)
       case _ =>
@@ -213,8 +213,8 @@ object DebugIntrinsic {
       case s: SInt => s.widthOption.map(w => Map("width" -> w.toString)).getOrElse(Map.empty)
       case v: Vec[_] =>
         Map("length" -> v.length.toString, "elementType" -> extractTypeName(v.sample_element))
-      case _: EnumType => Map.empty  // Enum metadata via extractEnumDef(), not reflection
-      case b: Bundle => extractBundleParams(b)
+      case _: EnumType => Map.empty // Enum metadata via extractEnumDef(), not reflection
+      case b: Bundle   => extractBundleParams(b)
       case _ => Map.empty
     }
   }
@@ -241,7 +241,8 @@ object DebugIntrinsic {
             field.setAccessible(true)
             paramName -> field.get(bundle).toString
           }.toOption
-        }.toMap
+        }
+        .toMap
     } catch {
       case NonFatal(_) => Map.empty
     }
@@ -258,27 +259,29 @@ object DebugIntrinsic {
   def extractEnumDef(`enum`: EnumType): String = {
     val key = `enum`.factory.getClass.getName
 
-    enumCache.getOrElseUpdate(key, {
-      try {
-        val allValues = `enum`.factory.all
-        val enumTypeName = extractTypeName(`enum`)
+    enumCache.getOrElseUpdate(
+      key, {
+        try {
+          val allValues = `enum`.factory.all
+          val enumTypeName = extractTypeName(`enum`)
 
-        allValues.map { e =>
-          val cleanName = ScalaArtifacts.cleanEnumValueName(
-            e.toString,
-            removeEnumPrefix = true
-          )
-          s"""\"${e.litValue}\":\"$cleanName\""""
-        }.mkString("{", ",", "}")
-      } catch {
-        case NonFatal(_) =>
-          val cleanName = ScalaArtifacts.cleanTypeName(
-            `enum`.getClass.getSimpleName,
-            stripTypeSuffix = true
-          )
-          s"${`enum`.litValue}:$cleanName"
+          allValues.map { e =>
+            val cleanName = ScalaArtifacts.cleanEnumValueName(
+              e.toString,
+              removeEnumPrefix = true
+            )
+            s"""\"${e.litValue}\":\"$cleanName\""""
+          }.mkString("{", ",", "}")
+        } catch {
+          case NonFatal(_) =>
+            val cleanName = ScalaArtifacts.cleanTypeName(
+              `enum`.getClass.getSimpleName,
+              stripTypeSuffix = true
+            )
+            s"${`enum`.litValue}:$cleanName"
+        }
       }
-    })
+    )
   }
 
   private def serializeParams(params: Map[String, String]): String = {
@@ -287,7 +290,7 @@ object DebugIntrinsic {
 
   private object ScalaArtifacts {
     private val AnonymousClassSuffix: Regex = "\\$\\d+$".r
-    private val EnumPrefix: Regex = "^s(?=[A-Z])".r
+    private val EnumPrefix:           Regex = "^s(?=[A-Z])".r
 
     def clean(name: String, removeEnumPrefix: Boolean = false): String = {
       val base = AnonymousClassSuffix.replaceAllIn(name.stripSuffix("$"), "")

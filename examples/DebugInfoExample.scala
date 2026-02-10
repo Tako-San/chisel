@@ -28,16 +28,16 @@ class DebugInfoExample extends Module {
     val counter = Output(new CounterBundle(8))
     val state = Output(State())
   })
-  
+
   // Create internal state
   val cnt = RegInit(0.U.asTypeOf(new CounterBundle(8)))
   val fsm = RegInit(State.sIDLE)
-  
+
   // Simple counter logic
   when(cnt.enable) {
     cnt.value := cnt.value + 1.U
   }
-  
+
   // Simple FSM
   switch(fsm) {
     is(State.sIDLE) {
@@ -54,11 +54,11 @@ class DebugInfoExample extends Module {
       fsm := State.sIDLE
     }
   }
-  
+
   // Connect outputs
   io.counter := cnt
   io.state := fsm
-  
+
   // Annotate signals with DebugInfo (automatic enable check)
   DebugInfo.annotateRecursive(io.counter, "io.counter")
   DebugInfo.annotate(io.state, "io.state")
@@ -75,7 +75,7 @@ object DebugInfoExample extends App {
     new DebugInfoExample,
     Array("--enable-debug-intrinsics") // Optional: maintained if downstream tools need it
   )
-  
+
   // Validate debug intrinsics presence
   if (firrtl.contains("circt_debug_typeinfo")) {
     val count = "circt_debug_typeinfo".r.findAllMatchIn(firrtl).length
@@ -83,7 +83,7 @@ object DebugInfoExample extends App {
   } else {
     println("⚠ No debug intrinsics found")
   }
-  
+
   // Save FIRRTL for inspection
   val outputPath = "generated/DebugInfoExample.fir"
   new java.io.File("generated").mkdirs()

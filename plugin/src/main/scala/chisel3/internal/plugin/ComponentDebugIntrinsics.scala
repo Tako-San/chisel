@@ -33,53 +33,55 @@ import scala.tools.nsc.plugins.PluginComponent
   * - Graceful degradation (errors fall back to original code)
   */
 class ComponentDebugIntrinsics(
-  plugin: ChiselPlugin,
+  plugin:     ChiselPlugin,
   val global: Global
-) extends PluginComponent with Transform with TypingTransformers {
-  
+) extends PluginComponent
+    with Transform
+    with TypingTransformers {
+
   import global._
-  
+
   val phaseName = "chisel-debug-intrinsics"
   val runsAfter = List("typer")
   override val runsBefore = List("patmat")
-  
+
   private object chiselSymbols {
-    lazy val DataClass: ClassSymbol = rootMirror.getRequiredClass("chisel3.Data")
+    lazy val DataClass:   ClassSymbol = rootMirror.getRequiredClass("chisel3.Data")
     lazy val ModuleClass: ClassSymbol = rootMirror.getRequiredClass("chisel3.Module")
-    
+
     private val RegInitMethods = Set("RegInit", "Reg", "RegNext")
     private val WireMethods = Set("Wire", "WireInit", "WireDefault")
     private val IOMethods = Set("IO")
     private val MemMethods = Set("Mem", "SyncReadMem")
-    
+
     def isSubtypeOfData(tpe: Type): Boolean = {
       tpe <:< DataClass.tpe
     }
-    
+
     def isRegInit(sym: Symbol): Boolean = sym != null && RegInitMethods.contains(sym.name.toString)
-    def isWire(sym: Symbol): Boolean = sym != null && WireMethods.contains(sym.name.toString)
-    def isIO(sym: Symbol): Boolean = sym != null && IOMethods.contains(sym.name.toString)
-    def isMem(sym: Symbol): Boolean = sym != null && MemMethods.contains(sym.name.toString)
+    def isWire(sym:    Symbol): Boolean = sym != null && WireMethods.contains(sym.name.toString)
+    def isIO(sym:      Symbol): Boolean = sym != null && IOMethods.contains(sym.name.toString)
+    def isMem(sym:     Symbol): Boolean = sym != null && MemMethods.contains(sym.name.toString)
   }
-  
-  override def newTransformer(unit: CompilationUnit): Transformer = 
+
+  override def newTransformer(unit: CompilationUnit): Transformer =
     new DebugIntrinsicsTransformer(unit)
-  
+
   class DebugIntrinsicsTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
     override def transform(tree: Tree): Tree = {
       if (!plugin.addDebugIntrinsics) return super.transform(tree)
-      
+
       tree match {
         case vd: ValDef =>
           // Optimization: Check if instrumentable AND get binding type in one pass
           getChiselBinding(vd) match {
             case Some(binding) => instrumentValDef(vd, binding)
-            case None => super.transform(tree)
+            case None          => super.transform(tree)
           }
         case _ => super.transform(tree)
       }
     }
-    
+
     /**
       * Check if ValDef should be instrumented and return the binding type.
       * Guards: (1) chisel3.Data type, (2) Chisel constructor (RegInit/Wire/IO/Mem)
@@ -88,12 +90,12 @@ class ComponentDebugIntrinsics(
       */
     private def getChiselBinding(vd: ValDef): Option[String] = {
       try {
-        val isDataType = vd.symbol != null && 
-                         vd.symbol.info != null &&
-                         chiselSymbols.isSubtypeOfData(vd.symbol.info)
-        
+        val isDataType = vd.symbol != null &&
+          vd.symbol.info != null &&
+          chiselSymbols.isSubtypeOfData(vd.symbol.info)
+
         if (!isDataType) return None
-        
+
         vd.rhs match {
           case Apply(fun, _) if fun.symbol != null =>
             if (chiselSymbols.isRegInit(fun.symbol)) Some("Reg")
@@ -107,15 +109,15 @@ class ComponentDebugIntrinsics(
         case _: Exception => None
       }
     }
-    
+
     private def instrumentValDef(original: ValDef, binding: String): Tree = {
       val name = original.name
       val rhs = original.rhs
-      
+
       try {
         val transformedRHS = super.transform(rhs)
         val tmpName = TermName(s"_debug_tmp_${name.toString}")
-        
+
         val instrumentedBlock = localTyper.typed {
           q"""
             {
@@ -129,7 +131,7 @@ class ComponentDebugIntrinsics(
             }
           """
         }
-        
+
         treeCopy.ValDef(original, original.mods, name, original.tpt, instrumentedBlock)
       } catch {
         case e: Exception =>
