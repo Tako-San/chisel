@@ -47,16 +47,16 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // Fix: Explicitly type the temporary variable to avoid inference issues ("found: Any, required: chisel3.Data")
-            // We reuse 'tpt' from the original ValDef which is guaranteed to be a subtype of Data here.
+            // Fix: Use an IIFE (Immediately Invoked Function Expression) to safely bind the temporary variable.
+            // This prevents the compiler from trying to lift 'debug_tmp' into a class field, which causes 'Unexpected tree in genLoad'.
+            // Structure: ((debug_tmp: T) => { emit(debug_tmp); debug_tmp })(rhs)
             
-            val newRhs = q"""{ 
-              val $tempName: $tpt = $transformedRHS;
+            val newRhs = q"""(( $tempName: $tpt ) => {
               chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
                 chisel3.experimental.SourceLine($sourcePath, $sourceLine, 0)
               );
               $tempName 
-            }"""
+            })($transformedRHS)"""
             
             val newValDef = treeCopy.ValDef(vd, mods, name, tpt, newRhs)
             localTyper.typed(newValDef)
