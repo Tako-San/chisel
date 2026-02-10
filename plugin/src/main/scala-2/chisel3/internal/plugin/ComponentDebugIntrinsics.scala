@@ -47,12 +47,11 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // Fix: Do not replace ValDef with a Block. Instead, replace the RHS of the ValDef.
-            // Old incorrect way: localTyper.typed(q"{ ... }") -> returns a Block, which is invalid where ValDef is expected (class body)
-            // New correct way: treeCopy.ValDef(vd, ..., rhs = q"{ ... }")
+            // Fix: Explicitly type the temporary variable to avoid inference issues ("found: Any, required: chisel3.Data")
+            // We reuse 'tpt' from the original ValDef which is guaranteed to be a subtype of Data here.
             
             val newRhs = q"""{ 
-              val $tempName = $transformedRHS;
+              val $tempName: $tpt = $transformedRHS;
               chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
                 chisel3.experimental.SourceLine($sourcePath, $sourceLine, 0)
               );
