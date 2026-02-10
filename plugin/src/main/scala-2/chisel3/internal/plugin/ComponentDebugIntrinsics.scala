@@ -4,7 +4,6 @@ import scala.tools.nsc
 import scala.tools.nsc.{Global, Phase}
 import scala.tools.nsc.plugins.PluginComponent
 import scala.tools.nsc.transform.{Transform, TypingTransformers}
-import scala.collection.mutable.ListBuffer
 
 class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
     extends PluginComponent
@@ -23,7 +22,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
     val shouldSkip = false
     def isPluginEnabled: Boolean = plugin.addDebugIntrinsics
 
-    // Helper to check for IO(...) - Skip these to prevent VerifyError
     private def isIO(rhs: Tree): Boolean = {
       rhs match {
         case Apply(Select(_, TermName("IO")), _)               => true
@@ -51,7 +49,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
       }
     }
 
-    private def createEmitCall(sym: Symbol, name: String, binding: String, pos: Position): Tree = {
+    private def createEmitCall(tempSym: Symbol, name: String, binding: String, pos: Position): Tree = {
       val debugIntrinsicModule = rootMirror.getModuleIfDefined("chisel3.debuginternal.DebugIntrinsic")
       val sourceLineClass = rootMirror.getClassIfDefined("chisel3.experimental.SourceLine")
 
@@ -63,7 +61,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
           Apply(
             Select(Ident(debugIntrinsicModule), TermName("emit")),
             List(
-              Ident(sym).setPos(pos),
+              Ident(tempSym).setPos(pos),
               Literal(Constant(name)),
               Literal(Constant(binding))
             )
@@ -88,63 +86,15 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
       if (shouldSkip || !isPluginEnabled) return super.transform(tree)
 
       tree match {
-        // CASE 1: Handle Fields (members of a Class/Trait/Module)
-        // We intercept at Template to insert sibling fields
-        case t: Template =>
-          val newBody = new ListBuffer[Tree]
-          var changed = false
-
-          for (stat <- t.body) {
-            stat match {
-              case vd @ ValDef(mods, name, tpt, rhs)
-                  if !mods.isSynthetic && !name.toString.startsWith("debug_tmp") && rhs.nonEmpty &&
-                    isChiselData(tpt) && !isIO(rhs) =>
-
-                changed = true
-                val transformedRHS = transform(rhs)
-
-                // 1. Create Shadow Field (private[this] val debug_tmp)
-                val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
-                // use newTermSymbol for fields to ensure correct OWNER (the Class)
-                val tempSym =
-                  currentOwner.newTermSymbol(tempName, vd.pos, PRIVATE | LOCAL | SYNTHETIC)
-                tempSym.setInfo(localTyper.typed(transformedRHS).tpe)
-
-                val shadowValDef = ValDef(tempSym, transformedRHS).setPos(vd.pos)
-
-                // 2. Create Emit Call using the shadow field symbol
-                val emitCall = createEmitCall(tempSym, name.toString, extractBinding(rhs), vd.pos)
-
-                // 3. Modify Original Field RHS to: { emit(...); debug_tmp }
-                // This block executes during class initialization
-                val block = Block(List(emitCall), Ident(tempSym).setPos(vd.pos)).setPos(vd.pos)
-                val typedBlock = localTyper.typed(block)
-
-                val newValDef = treeCopy.ValDef(vd, mods, name, tpt, typedBlock)
-
-                // Add both to the class body
-                newBody += shadowValDef
-                newBody += newValDef
-
-              case _ =>
-                newBody += transform(stat)
-            }
-          }
-
-          if (changed) treeCopy.Template(t, t.parents, t.self, newBody.toList)
-          else super.transform(tree)
-
-        // CASE 2: Handle Local Variables (inside Methods/Blocks)
-        // We ensure we are NOT in a class context (currentOwner.isClass == false)
+        // Handle BOTH fields and local variables uniformly
         case vd @ ValDef(mods, name, tpt, rhs)
             if !mods.isSynthetic && !name.toString.startsWith("debug_tmp") && rhs.nonEmpty &&
-              !currentOwner.isClass &&
               isChiselData(tpt) && !isIO(rhs) =>
 
           val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
           val transformedRHS = transform(rhs)
 
-          // Local variable -> newVariable (Args: Name, Position)
+          // Create symbol: use newVariable for BOTH cases to keep it simple
           val tempSym = currentOwner.newVariable(tempName, vd.pos)
           val typedRHS = localTyper.typed(transformedRHS)
           tempSym.setInfo(typedRHS.tpe)
@@ -152,8 +102,11 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
           val tempValDef = ValDef(tempSym, typedRHS).setPos(vd.pos)
           val emitCall = createEmitCall(tempSym, name.toString, extractBinding(rhs), vd.pos)
 
-          val block = Block(List(tempValDef, emitCall), Ident(tempSym).setPos(vd.pos)).setPos(vd.pos)
-          localTyper.typed(block)
+          // Create block WITHOUT typing it (let later phases handle it)
+          val block = Block(
+            List(tempValDef, emitCall),
+            Ident(tempSym).setPos(vd.pos)
+          ).setPos(vd.pos)
 
           treeCopy.ValDef(vd, mods, name, tpt, block)
 
