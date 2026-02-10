@@ -49,7 +49,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
       }
     }
 
-    private def createEmitCall(tempSym: Symbol, name: String, binding: String, pos: Position): Tree = {
+    private def createEmitCall(tempIdent: Tree, name: String, binding: String, pos: Position): Tree = {
       val debugIntrinsicModule = rootMirror.getModuleIfDefined("chisel3.debuginternal.DebugIntrinsic")
       val sourceLineClass = rootMirror.getClassIfDefined("chisel3.experimental.SourceLine")
 
@@ -61,7 +61,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
           Apply(
             Select(Ident(debugIntrinsicModule), TermName("emit")),
             List(
-              Ident(tempSym).setPos(pos),
+              tempIdent,
               Literal(Constant(name)),
               Literal(Constant(binding))
             )
@@ -82,64 +82,50 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global)
       }
     }
 
-    // Safety check: Is this ValDef in a safe transformation context?
-    private def isSafeToTransform(vd: ValDef): Boolean = {
-      // Skip if owner is invalid
-      if (currentOwner == NoSymbol || currentOwner == null) return false
-      
-      // Skip if in template body (constructor)
-      if (currentOwner.isConstructor) return false
-      
-      // Skip if owner is a synthetic class
-      if (currentOwner.isAnonymousClass || currentOwner.isAnonymousFunction) return false
-      
-      // Skip if tpt is empty (type inference not complete)
-      if (vd.tpt.isEmpty || vd.tpt.tpe == null || vd.tpt.tpe == NoType) return false
-      
-      true
-    }
-
     override def transform(tree: Tree): Tree = {
       if (shouldSkip || !isPluginEnabled) return super.transform(tree)
 
       tree match {
         case vd @ ValDef(mods, name, tpt, rhs)
-            if !mods.isSynthetic && !name.toString.startsWith("debug_tmp") && rhs.nonEmpty &&
-              isChiselData(tpt) && !isIO(rhs) && isSafeToTransform(vd) =>
+            if !mods.isSynthetic && 
+               !mods.hasFlag(PARAM) &&
+               !name.toString.startsWith("debug_tmp") && 
+               rhs.nonEmpty &&
+               tpt.nonEmpty &&
+               isChiselData(tpt) && 
+               !isIO(rhs) =>
 
           try {
-            val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
+            // Transform RHS first
             val transformedRHS = transform(rhs)
 
-            // Type the RHS first to get proper type info
-            val typedRHS = localTyper.typed(transformedRHS)
+            // Create temp name for inline block
+            val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
 
-            // Create symbol with known type
-            val tempSym = currentOwner.newValue(tempName, vd.pos, SYNTHETIC)
-            tempSym.setInfo(typedRHS.tpe)
-
-            // Verify symbol has valid owner
-            if (tempSym.owner == NoSymbol) {
-              // Fallback: return original tree if symbol creation failed
-              return treeCopy.ValDef(vd, mods, name, tpt, transform(rhs))
-            }
-
-            // Build untyped trees - let localTyper resolve symbols within block context
-            val tempValDef = ValDef(tempSym, typedRHS).setPos(vd.pos)
-            val emitCall = createEmitCall(tempSym, name.toString, extractBinding(rhs), vd.pos)
-
-            // Type the complete block as a unit - symbols resolved in context
-            val block = localTyper.typed(
+            // Build inline block WITHOUT creating new symbol in currentOwner
+            // Let localTyper figure out the symbol when typing the block
+            val inlineBlock = Block(
+              List(
+                // Untyped ValDef - localTyper will create symbol
+                ValDef(Modifiers(SYNTHETIC), tempName, TypeTree(), transformedRHS)
+              ),
               Block(
-                List(tempValDef, emitCall),
-                Ident(tempSym).setPos(vd.pos)
+                List(
+                  createEmitCall(Ident(tempName), name.toString, extractBinding(rhs), vd.pos)
+                ),
+                Ident(tempName)
               )
             )
 
-            treeCopy.ValDef(vd, mods, name, tpt, block)
+            // Type the entire block - this creates all symbols in proper scope
+            val typedBlock = localTyper.typed(inlineBlock)
+
+            // Return ValDef with typed block as RHS
+            treeCopy.ValDef(vd, mods, name, tpt, typedBlock)
+
           } catch {
             case e: Throwable =>
-              // If anything fails, return original tree (don't break compilation)
+              // Fallback: return original tree
               if (sys.props.get("chisel.debug.verbose").exists(_.toLowerCase == "true")) {
                 Console.err.println(s"[ComponentDebugIntrinsics] Skipping ${name}: ${e.getMessage}")
               }
