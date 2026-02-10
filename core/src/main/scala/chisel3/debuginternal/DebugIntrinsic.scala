@@ -15,8 +15,8 @@ import scala.util.matching.Regex
   * Implements unified Probe API approach that survives DCE/CSE/inlining
   * optimizations. Used by user-facing API and compiler plugin.
   *
-  * @see [CIRCT Debug Dialect](https://circt.llvm.org/docs/Dialects/Debug/)
-  * @see [Chisel Probe API](https://www.chisel-lang.org/docs/explanations/probes)
+  * @see [[https://circt.llvm.org/docs/Dialects/Debug/ CIRCT Debug Dialect]]
+  * @see [[https://www.chisel-lang.org/docs/explanations/probes Chisel Probe API]]
   */
 object DebugIntrinsic {
 
@@ -268,7 +268,7 @@ object DebugIntrinsic {
             e.toString,
             removeEnumPrefix = true
           )
-          s""""${e.litValue}":"$cleanName""""
+          s"""\"${e.litValue}\":\"$cleanName\""""
         }.mkString("{", ",", "}")
       } catch {
         case NonFatal(_) =>
