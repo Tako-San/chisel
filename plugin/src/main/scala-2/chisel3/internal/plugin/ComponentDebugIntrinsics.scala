@@ -47,17 +47,20 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // Generate emission call
-            // Fix: Use SourceLine explicitly instead of incorrectly calling macro materialize
-            // SourceLine(filename: String, line: Int, col: Int)
-            val block = q"""{ 
+            // Fix: Do not replace ValDef with a Block. Instead, replace the RHS of the ValDef.
+            // Old incorrect way: localTyper.typed(q"{ ... }") -> returns a Block, which is invalid where ValDef is expected (class body)
+            // New correct way: treeCopy.ValDef(vd, ..., rhs = q"{ ... }")
+            
+            val newRhs = q"""{ 
               val $tempName = $transformedRHS;
               chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
                 chisel3.experimental.SourceLine($sourcePath, $sourceLine, 0)
               );
               $tempName 
             }"""
-            localTyper.typed(block)
+            
+            val newValDef = treeCopy.ValDef(vd, mods, name, tpt, newRhs)
+            localTyper.typed(newValDef)
           } else {
             super.transform(tree)
           }
