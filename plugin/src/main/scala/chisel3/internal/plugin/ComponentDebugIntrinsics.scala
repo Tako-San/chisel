@@ -47,6 +47,7 @@ class ComponentDebugIntrinsics(
     new DebugIntrinsicsTransformer(unit)
   
   class DebugIntrinsicsTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
+    // Pass the correct global instance to ChiselSymbols
     lazy val chiselSymbols = new ChiselSymbols(global)
     
     override def transform(tree: Tree): Tree = {
@@ -73,19 +74,16 @@ class ComponentDebugIntrinsics(
       try {
         val isDataType = vd.symbol != null && 
                          vd.symbol.info != null &&
-                         // Cast chiselSymbols.DataClass.tpe to our global.Type context
-                         (vd.symbol.info <:< chiselSymbols.DataClass.tpe.asInstanceOf[global.Type])
+                         chiselSymbols.isSubtypeOfData(vd.symbol.info)
         
         if (!isDataType) return None
         
         vd.rhs match {
           case Apply(fun, _) if fun.symbol != null =>
-            // Cast our symbol to chiselSymbols.global.Symbol for compatibility
-            val sym = fun.symbol.asInstanceOf[chiselSymbols.global.Symbol]
-            if (chiselSymbols.isRegInit(sym)) Some("Reg")
-            else if (chiselSymbols.isWire(sym)) Some("Wire")
-            else if (chiselSymbols.isIO(sym)) Some("IO")
-            else if (chiselSymbols.isMem(sym)) Some("Mem")
+            if (chiselSymbols.isRegInit(fun.symbol)) Some("Reg")
+            else if (chiselSymbols.isWire(fun.symbol)) Some("Wire")
+            else if (chiselSymbols.isIO(fun.symbol)) Some("IO")
+            else if (chiselSymbols.isMem(fun.symbol)) Some("Mem")
             else None
           case _ => None
         }
@@ -136,6 +134,11 @@ class ChiselSymbols(val global: Global) {
   private val WireMethods = Set("Wire", "WireInit", "WireDefault")
   private val IOMethods = Set("IO")
   private val MemMethods = Set("Mem", "SyncReadMem")
+  
+  /** Check if a type is a subtype of chisel3.Data safely within the same Global context */
+  def isSubtypeOfData(tpe: Type): Boolean = {
+    tpe <:< DataClass.tpe
+  }
   
   def isRegInit(sym: Symbol): Boolean = sym != null && RegInitMethods.contains(sym.name.toString)
   def isWire(sym: Symbol): Boolean = sym != null && WireMethods.contains(sym.name.toString)
