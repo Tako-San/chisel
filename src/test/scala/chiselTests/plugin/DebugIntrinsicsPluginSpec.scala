@@ -8,16 +8,10 @@ import circt.stage.ChiselStage
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-/**
-  * Unit tests for ComponentDebugIntrinsics compiler plugin.
-  * 
-  * Tests AST transformation correctness and integration with DebugIntrinsic API.
-  */
 class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
   behavior of "ComponentDebugIntrinsics Plugin"
 
-  // Helper to enable plugin for a test block
   def withPlugin[T](block: => T): T = {
     val prevPlugin = sys.props.get("chisel.plugin.debugintrinsics")
     try {
@@ -36,16 +30,13 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
       DebugTestHelpers.withDebugMode {
         class TestModule extends Module {
           val state = RegInit(0.U(8.W))
-          // NO manual DebugInfo.annotate() call!
         }
 
         val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
 
-        // Verify specific target info
         (firrtl should include).regex("""target\s*=\s*"state"""")
         (firrtl should include).regex("""binding\s*=\s*"Reg"""")
 
-        // Validate Probe API usage (Redundancy check: replaces manual regex for intrinsic structure)
         DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 1)
       }
     }
@@ -97,10 +88,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
         val firrtl = ChiselStage.emitCHIRRTL(new MemModule)
 
-        // Assuming plugin instruments Mem if possible (or skips safely)
-        // If it skips, we expect 0 intrinsics. 
-        // Based on PR claims, it SHOULD instrument it.
-        // We look for target="mem"
         val hasMem = firrtl.contains("target = \"mem\"") || firrtl.contains("circt_debug_typeinfo")
         
         if (hasMem) {
@@ -108,9 +95,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
           (firrtl should include).regex("""binding\s*=\s*"Mem"""")
           DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 1)
         } else {
-          // If the implementation currently skips Mem (due to not being Data),
-          // we document this behavior here rather than failing.
-          // This allows the test to pass but warns us.
           info("Plugin skipped Mem instrumentation (expected if Mem !<: Data)")
         }
       }
@@ -135,7 +119,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
         val firrtl = ChiselStage.emitCHIRRTL(new ClosureModule)
 
-        // Should instrument 'r' inside the when block
         (firrtl should include).regex("""target\s*=\s*"r"""")
         DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 1)
       }
@@ -143,7 +126,7 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
   }
 
   it should "not instrument when plugin disabled" in {
-    sys.props.remove("chisel.plugin.debugintrinsics") // Plugin OFF
+    sys.props.remove("chisel.plugin.debugintrinsics")
     DebugTestHelpers.withDebugMode {
       class TestModule extends Module {
         val state = RegInit(0.U(8.W))
@@ -151,7 +134,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
 
-      // Should NOT have intrinsics (plugin disabled)
       (firrtl should not).include("circt_debug_typeinfo")
       DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 0)
     }
@@ -159,7 +141,7 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
   it should "not emit intrinsics when debug mode disabled" in {
     withPlugin {
-      sys.props.remove("chisel.debug") // Debug mode OFF
+      sys.props.remove("chisel.debug")
 
       class TestModule extends Module {
         val state = RegInit(0.U(8.W))
@@ -167,7 +149,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
       val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
 
-      // Transformation happens, but intrinsics inactive at runtime
       (firrtl should not).include("circt_debug_typeinfo")
       DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 0)
     }
@@ -189,7 +170,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
         val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
 
-        // All signals should have intrinsics
         (firrtl should include).regex("""target\s*=\s*"io"""")
         (firrtl should include).regex("""target\s*=\s*"reg1"""")
         (firrtl should include).regex("""target\s*=\s*"reg2"""")
@@ -203,7 +183,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
   it should "not create infinite recursion" in {
     withPlugin {
       DebugTestHelpers.withDebugMode {
-        // This should compile without stack overflow
         class TestModule extends Module {
           val state = RegInit(0.U(8.W))
         }
@@ -229,7 +208,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
         val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
 
-        // Verify type names preserved
         (firrtl should include).regex("""typeName\s*=\s*"MyBundle"""")
         (firrtl should include).regex("""typeName\s*=\s*"UInt"""")
 
@@ -297,10 +275,8 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
         class TestModule extends Module {
           val io = IO(new Bundle { val out = Output(UInt(8.W)) })
 
-          // Regular Scala val (not Chisel)
           val scalaVal = 42
 
-          // Chisel (should be instrumented)
           val chiselWire = Wire(UInt(8.W))
           chiselWire := scalaVal.U
           io.out := chiselWire
@@ -308,7 +284,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
         val firrtl = ChiselStage.emitCHIRRTL(new TestModule)
 
-        // Should have intrinsic for chiselWire
         (firrtl should include).regex("""target\s*=\s*"chiselWire"""")
 
         DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 1)
@@ -333,11 +308,8 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
         val firrtl = ChiselStage.emitCHIRRTL(new OuterModule)
 
-        // Both outer and inner signals should be instrumented
-        // Simple check that we see debug info
         (firrtl should include).regex("""circt_debug_typeinfo""")
 
-        // We expect at least one from Outer and one from Inner
         DebugTestHelpers.assertProbeAPIUsed(firrtl, minIntrinsics = 2)
       }
     }
@@ -354,7 +326,6 @@ class DebugIntrinsicsPluginSpec extends AnyFlatSpec with Matchers {
 
     val firrtlWithoutPlugin = ChiselStage.emitCHIRRTL(new TestModule)
 
-    // Should be identical to manual code (no overhead)
     (firrtlWithoutPlugin should not).include("circt_debug_typeinfo")
     (firrtlWithoutPlugin should not).include("Probe<")
     (firrtlWithoutPlugin should not).include("_debug_tmp")
