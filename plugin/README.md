@@ -107,7 +107,7 @@ def indentShow(s: => String): Unit = {
 
 ```scala
 // build.sbt
-scalacOptions += "-P:chisel:add-debug-intrinsics"
+scalacOptions += "-P:chisel:addDebugIntrinsics"
 ```
 
 ```bash
