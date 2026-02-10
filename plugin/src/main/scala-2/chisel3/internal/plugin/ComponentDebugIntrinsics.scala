@@ -48,15 +48,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // 2. Create temporary ValDef: val debug_tmp$N = rhs
-            val tempValDef = ValDef(
-              Modifiers(Flag.SYNTHETIC),
-              tempName,
-              TypeTree(tpt.tpe),
-              transformedRHS
-            ).setPos(rhs.pos)
-
-            // 3. Build the emit call: DebugIntrinsic.emit(debug_tmp, "name", "binding")(SourceLine(...))
+            // 2. Build the emit call: DebugIntrinsic.emit(debug_tmp, "name", "binding")(SourceLine(...))
             val debugIntrinsicModule = rootMirror.getModuleIfDefined("chisel3.debuginternal.DebugIntrinsic")
             val sourceLineClass = rootMirror.getClassIfDefined("chisel3.experimental.SourceLine")
             
@@ -85,21 +77,32 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                 )
               ).setPos(tree.pos)
             } else {
-              // Fallback: just return the temp ident if symbols not found
+              // Fallback
               Ident(tempName).setPos(tree.pos)
             }
             
-            // 4. Create Block: { val debug_tmp = rhs; emit(debug_tmp, ...); debug_tmp }
-            val newBlock = Block(
-              List(tempValDef, emitCall),
-              Ident(tempName).setPos(tree.pos)
+            // 3. Create Match: rhs match { case tempName => emit(tempName, ...); tempName }
+            // Using Match instead of Block prevents the "Unexpected tree in genLoad" error 
+            // where the backend confuses local ValDefs in class body for members.
+            val caseDef = CaseDef(
+              Bind(tempName, Ident(nme.WILDCARD)),
+              EmptyTree,
+              Block(
+                List(emitCall),
+                Ident(tempName).setPos(tree.pos)
+              )
+            ).setPos(tree.pos)
+
+            val matchTree = Match(
+              transformedRHS,
+              List(caseDef)
             ).setPos(tree.pos)
             
-            // 5. Type the block
-            val typedBlock = localTyper.typed(newBlock)
+            // 4. Type the match
+            val typedMatch = localTyper.typed(matchTree)
             
-            // 6. Return updated ValDef with the new block as RHS
-            val newValDef = treeCopy.ValDef(vd, mods, name, tpt, typedBlock)
+            // 5. Return updated ValDef with the match as RHS
+            val newValDef = treeCopy.ValDef(vd, mods, name, tpt, typedMatch)
             newValDef
           } else {
             super.transform(tree)
