@@ -32,8 +32,8 @@ import chisel3.experimental.{SourceInfo, UnlocatableSourceInfo}
   * - Probe API ensures metadata survives FIRRTL optimizations
   * - Zero overhead when disabled (automatic runtime check)
   *
-  * @see [CIRCT Debug Dialect](https://circt.llvm.org/docs/Dialects/Debug/)
-  * @see [Tywaves Viewer](https://github.com/rameloni/tywaves-chisel)
+  * @see [[https://circt.llvm.org/docs/Dialects/Debug/ CIRCT Debug Dialect]]
+  * @see [[https://github.com/rameloni/tywaves-chisel Tywaves Viewer]]
   * @see [[chisel3.debuginternal.DebugIntrinsic]] for implementation details
   */
 object DebugInfo {
