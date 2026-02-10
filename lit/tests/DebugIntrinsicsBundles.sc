@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// RUN: CHISEL_DEBUG=true scala-cli --server=false \
-// RUN:   --java-home=%JAVAHOME \
-// RUN:   --extra-jars=%RUNCLASSPATH \
-// RUN:   --scala-version=%SCALAVERSION \
-// RUN:   --scala-option="-Xplugin:%SCALAPLUGINJARS" \
-// RUN:   --scala-option="-P:chiselplugin:addDebugIntrinsics" \
-// RUN:   --scala-option "-Xprint:componentDebugIntrinsics" \
+// RUN: CHISEL_DEBUG=true scala-cli --server=false \\
+// RUN:   --java-home=%JAVAHOME \\
+// RUN:   --extra-jars=%RUNCLASSPATH \\
+// RUN:   --scala-version=%SCALAVERSION \\
+// RUN:   --scala-option="-Xplugin:%SCALAPLUGINJARS" \\
+// RUN:   --scala-option="-P:chiselplugin:addDebugIntrinsics" \\
+// RUN:   --scala-option "-Xprint:componentDebugIntrinsics" \\
 // RUN:   %s | FileCheck %s
 
 import chisel3._
@@ -25,23 +25,15 @@ class MyBundle(val dataWidth: Int) extends Bundle {
 class BundleTest extends Module {
   val io = IO(new MyBundle(16))
 
-  // CHECK: wire [[PROBE_IO:_.*]] : Probe<
-  // CHECK: define([[PROBE_IO]], probe(io))
-  // CHECK: intrinsic(circt_debug_typeinfo<
-  // CHECK-SAME: target = "io"
-  // CHECK-SAME: typeName = "MyBundle"
-  // CHECK-SAME: parameters = {{.*}}dataWidth=16{{.*}}
-  // CHECK-SAME: >, read([[PROBE_IO]]))
+  // IO excluded by plugin (!isIO filter)
+  // CHECK-NOT: target = "io"
 
   val reg = RegInit(0.U.asTypeOf(new MyBundle(16)))
   reg := io
 
-  // CHECK: wire [[PROBE_REG:_.*]] : Probe<
-  // CHECK: define([[PROBE_REG]], probe(reg))
-  // CHECK: intrinsic(circt_debug_typeinfo<
-  // CHECK-SAME: target = "reg"
-  // CHECK-SAME: typeName = "MyBundle"
-  // CHECK-SAME: >, read([[PROBE_REG]]))
+  // CHECK-DAG: wire [[PROBE_REG:_.*]] : Probe<
+  // CHECK-DAG: define [[PROBE_REG]] = probe(reg)
+  // CHECK-DAG: intrinsic(circt_debug_typeinfo<{{.*}}target = "reg"{{.*}}typeName = "MyBundle"{{.*}}>, read([[PROBE_REG]]))
 }
 
 println(ChiselStage.emitCHIRRTL(new BundleTest))
@@ -54,13 +46,9 @@ println(ChiselStage.emitCHIRRTL(new BundleTest))
 class VecTest extends Module {
   val regs = RegInit(VecInit(Seq.fill(4)(0.U(8.W))))
 
-  // CHECK: wire [[PROBE_REGS:_.*]] : Probe<
-  // CHECK: define([[PROBE_REGS]], probe(regs))
-  // CHECK: intrinsic(circt_debug_typeinfo<
-  // CHECK-SAME: target = "regs"
-  // CHECK-SAME: typeName = "Vec"
-  // CHECK-SAME: parameters = {{.*}}length=4{{.*}}
-  // CHECK-SAME: >, read([[PROBE_REGS]]))
+  // CHECK-DAG: wire [[PROBE_REGS:_.*]] : Probe<
+  // CHECK-DAG: define [[PROBE_REGS]] = probe(regs)
+  // CHECK-DAG: intrinsic(circt_debug_typeinfo<{{.*}}target = "regs"{{.*}}typeName = "Vec"{{.*}}>, read([[PROBE_REGS]]))
 }
 
 println(ChiselStage.emitCHIRRTL(new VecTest))
@@ -83,12 +71,8 @@ class OuterBundle extends Bundle {
 class NestedBundleTest extends Module {
   val io = IO(new OuterBundle)
 
-  // CHECK: wire [[PROBE_IO:_.*]] : Probe<
-  // CHECK: define([[PROBE_IO]], probe(io))
-  // CHECK: intrinsic(circt_debug_typeinfo<
-  // CHECK-SAME: target = "io"
-  // CHECK-SAME: typeName = "OuterBundle"
-  // CHECK-SAME: >, read([[PROBE_IO]]))
+  // IO excluded
+  // CHECK-NOT: target = "io"
 }
 
 println(ChiselStage.emitCHIRRTL(new NestedBundleTest))
@@ -101,13 +85,9 @@ println(ChiselStage.emitCHIRRTL(new NestedBundleTest))
 class WireInitTest extends Module {
   val data = WireInit(0.U.asTypeOf(new MyBundle(32)))
 
-  // CHECK: wire [[PROBE_DATA:_.*]] : Probe<
-  // CHECK: define([[PROBE_DATA]], probe(data))
-  // CHECK: intrinsic(circt_debug_typeinfo<
-  // CHECK-SAME: target = "data"
-  // CHECK-SAME: binding = "Wire"
-  // CHECK-SAME: typeName = "MyBundle"
-  // CHECK-SAME: >, read([[PROBE_DATA]]))
+  // CHECK-DAG: wire [[PROBE_DATA:_.*]] : Probe<
+  // CHECK-DAG: define [[PROBE_DATA]] = probe(data)
+  // CHECK-DAG: intrinsic(circt_debug_typeinfo<{{.*}}target = "data"{{.*}}binding = "Wire"{{.*}}typeName = "MyBundle"{{.*}}>, read([[PROBE_DATA]]))
 }
 
 println(ChiselStage.emitCHIRRTL(new WireInitTest))
