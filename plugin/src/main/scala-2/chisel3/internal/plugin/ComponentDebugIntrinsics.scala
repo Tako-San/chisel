@@ -62,6 +62,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
     private lazy val chiselBundleClass: Symbol =
       rootMirror.getClassIfDefined("chisel3.Bundle")
 
+    private lazy val chiselModuleClass: Symbol =
+      rootMirror.getClassIfDefined("chisel3.experimental.BaseModule")
+
     /** Check if symbol represents Chisel Data type */
     private def isChiselData(sym: Symbol): Boolean = {
       if (sym == NoSymbol || sym.info == NoType) return false
@@ -236,6 +239,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
     override def transform(tree: Tree): Tree = tree match {
       // Handle class/object bodies (Template)
       case tmpl @ Template(parents, self, body) =>
+        if (settings.debug.value || plugin.addDebugIntrinsics) {
+          reporter.warning(tmpl.pos, s"[DEBUG-TEMPLATE] Visiting template of ${currentOwner.name}")
+        }
         val injected = injectIntoStats(body)
         val transformed = injected.map(transform)
 
@@ -278,20 +284,21 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
           super.transform(dd)
         }
 
-      // Handle Bundle constructor (fields of Bundle classes)
+      // Handle Bundle AND Module constructors
       case dd @ DefDef(mods, nme.CONSTRUCTOR, tparams, vparamss, tpt, rhs) =>
         val ownerClass = currentOwner.owner
-        val isBundleConstructor = if (chiselBundleClass != NoSymbol) {
-          ownerClass.baseClasses.contains(chiselBundleClass)
+        val isComponent = if (chiselBundleClass != NoSymbol) {
+          ownerClass.baseClasses.contains(chiselBundleClass) || 
+          (chiselModuleClass != NoSymbol && ownerClass.baseClasses.contains(chiselModuleClass))
         } else {
           false
         }
 
-        if (isBundleConstructor) {
+        if (isComponent) {
           if (settings.debug.value || plugin.addDebugIntrinsics) {
             reporter.warning(
               dd.pos,
-              s"[INSTRUMENT] Bundle constructor in ${ownerClass.name}"
+              s"[INSTRUMENT] Component constructor in ${ownerClass.name}"
             )
           }
 
