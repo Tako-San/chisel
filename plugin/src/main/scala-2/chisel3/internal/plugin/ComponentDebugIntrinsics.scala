@@ -98,8 +98,32 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       isModule || isBundle
     }
 
+    /** Helper to dump AST tree structure for debugging */
+    private def dumpTree(tree: Tree, indent: Int = 0): String = {
+      val prefix = "  " * indent
+      tree match {
+        case Apply(fun, args) =>
+          s"${prefix}Apply(\n${dumpTree(fun, indent + 1)},\n${prefix}  args=[${args.map(a => dumpTree(a, indent + 2)).mkString(", ")}]\n${prefix})"
+        case TypeApply(fun, targs) =>
+          s"${prefix}TypeApply(\n${dumpTree(fun, indent + 1)},\n${prefix}  targs=[${targs.map(showRaw(_)).mkString(", ")}]\n${prefix})"
+        case Select(qual, name) =>
+          s"${prefix}Select(\n${dumpTree(qual, indent + 1)},\n${prefix}  name=${name})\n${prefix})"
+        case Ident(name) =>
+          s"${prefix}Ident(${name})"
+        case _ =>
+          s"${prefix}${tree.getClass.getSimpleName}(${showRaw(tree).take(50)}...)"
+      }
+    }
+
     /** Extract binding type from ValDef (Wire, Reg, Input, Output, IO) */
     private def extractBinding(vd: ValDef): Option[String] = {
+      
+      // DIAGNOSTIC: Log the RHS tree structure
+      if (plugin.addDebugIntrinsics) {
+        reporter.warning(vd.pos, s"[DIAG-RHS] ${vd.name} RHS tree:\n${dumpTree(vd.rhs)}")
+        reporter.warning(vd.pos, s"[DIAG-RHS] ${vd.name} RHS class: ${vd.rhs.getClass.getSimpleName}")
+        reporter.warning(vd.pos, s"[DIAG-RHS] ${vd.name} RHS showRaw: ${showRaw(vd.rhs).take(200)}")
+      }
       
       // Extended matching logic to handle object apply calls (e.g. RegInit.apply)
       def matchesName(tree: Tree, names: Set[String]): Boolean = tree match {
