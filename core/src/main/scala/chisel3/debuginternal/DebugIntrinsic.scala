@@ -16,8 +16,12 @@ object DebugIntrinsic {
   private val enumCache = TrieMap[String, String]()
 
   def isEnabled: Boolean = {
-    sys.env.get("CHISEL_DEBUG").exists(_.toLowerCase == "true") ||
-    sys.props.get("chisel.debug").exists(_.toLowerCase == "true")
+    val enabled = sys.env.get("CHISEL_DEBUG").exists(_.toLowerCase == "true") ||
+                  sys.props.get("chisel.debug").exists(_.toLowerCase == "true")
+    if (!enabled && sys.props.get("chisel.debug.verbose").exists(_.toLowerCase == "true")) {
+      println(s"[DebugIntrinsic] Debug mode DISABLED. env: ${sys.env.get("CHISEL_DEBUG")}, props: ${sys.props.get("chisel.debug")}")
+    }
+    enabled
   }
 
   def withDebugMode[T](block: => T): T = {
@@ -86,20 +90,19 @@ object DebugIntrinsic {
     target: String
   )(implicit sourceInfo: SourceInfo): Option[Unit] = {
     try {
+      // Force error if data is not hardware (null check or similar)
+      if (data == null) throw new IllegalArgumentException(s"Data is null for target $target")
+
       val probeWire = Wire(Probe(data.cloneType))
       define(probeWire, ProbeValue(data))
       Intrinsic(IntrinsicName, params: _*)(read(probeWire))
       Some(())
     } catch {
       case NonFatal(e) =>
-        if (e.getMessage != null && e.getMessage.contains("Probe")) {
-          Console.err.println(s"[DebugIntrinsic] CRITICAL: Probe API failure for '$target': ${e.getMessage}")
-          throw e
-        }
-        if (sys.props.get("chisel.debug.verbose").exists(_.toLowerCase == "true")) {
-          Console.err.println(s"[DebugIntrinsic] Warning: Failed for '$target': ${e.getMessage}")
-        }
-        None
+        // ALWAYS print error to stderr for debugging purposes
+        Console.err.println(s"[DebugIntrinsic] ERROR: Failed for '$target': ${e.getMessage}")
+        e.printStackTrace(Console.err)
+        throw e // Rethrow to fail the test if runtime fails
     }
   }
 
