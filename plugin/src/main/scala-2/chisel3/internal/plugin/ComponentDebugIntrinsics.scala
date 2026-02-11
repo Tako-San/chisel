@@ -45,8 +45,10 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // Build: { emit(rhs, "name", "binding"); rhs }
-            // Using Apply nodes directly to avoid DefDef creation
+            // Build: { emit(rhs, "name", "binding")(SourceLine(...))(UnlocatableSourceInfo); rhs }
+            // DebugIntrinsic.emit has signature: 
+            // def emit(data: Data, name: String, binding: String)(sl: SourceLine)(implicit sourceInfo: SourceInfo): Unit
+            
             val emitCall = Apply(
               Apply(
                 Apply(
@@ -59,18 +61,27 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                   ),
                   List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
                 ),
-                Nil
-              ),
-              List(
-                Apply(
-                  Select(
+                List(
+                  Apply(
                     Select(
-                      Select(Ident(TermName("chisel3")), TermName("experimental")),
-                      TermName("SourceLine")
+                      Select(
+                        Select(Ident(TermName("chisel3")), TermName("experimental")),
+                        TermName("SourceLine")
+                      ),
+                      TermName("apply")
                     ),
-                    TermName("apply")
+                    List(Literal(Constant(sourcePath)), Literal(Constant(sourceLine)), Literal(Constant(0)))
+                  )
+                )
+              ),
+              // Explicitly pass implicit SourceInfo argument
+              List(
+                Select(
+                  Select(
+                    Select(Ident(TermName("chisel3")), TermName("experimental")),
+                    TermName("UnlocatableSourceInfo")
                   ),
-                  List(Literal(Constant(sourcePath)), Literal(Constant(sourceLine)), Literal(Constant(0)))
+                  TermName("run") // case object run extends UnlocatableSourceInfo
                 )
               )
             )
