@@ -22,7 +22,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
   val runsAfter = List("typer")
   override val runsBefore = List("patmat") // Run before pattern matching to avoid AST
-  val phaseName = "debug-intrinsics"
+  val phaseName = "componentDebugIntrinsics"
 
   def newTransformer(unit: CompilationUnit): Transformer =
     new InjectionTransformer(unit)
@@ -84,9 +84,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
         case _                      => false
       }
 
-      // DEBUG: Log RHS structure for interesting fields
-      if ((settings.debug.value || plugin.addDebugIntrinsics) && (vd.name.toString == "state" || vd.name.toString == "r")) {
-         reporter.warning(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}")
+      // DEBUG: Log RHS structure for test signals
+      if (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs") {
+         reporter.info(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}", force = true)
       }
 
       vd.rhs match {
@@ -160,11 +160,11 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       val validSym = vd.symbol != NoSymbol
       val isData = isChiselData(vd.symbol)
       
-      if ((settings.debug.value || plugin.addDebugIntrinsics) && !validSym && vd.name.toString == "state") {
-         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol")
+      if (!validSym && (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs")) {
+         reporter.info(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol", force = true)
       }
-      if ((settings.debug.value || plugin.addDebugIntrinsics) && !isData && vd.name.toString == "state") {
-         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}")
+      if (!isData && (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs")) {
+         reporter.info(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}", force = true)
       }
 
       validSym && isData
@@ -173,8 +173,8 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
     /** Create typed DebugIntrinsic.emit call for a ValDef */
     private def mkEmitCall(vd: ValDef, bindingType: String): Tree = {
       if (emitMethod == NoSymbol) {
-         if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}")
+         if (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs") {
+            reporter.info(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}", force = true)
          }
          return EmptyTree
       }
@@ -219,10 +219,8 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                   List(vd)
                 }
               case None =>
-                if (settings.debug.value || plugin.addDebugIntrinsics) {
-                   if (vd.name.toString == "state" || vd.name.toString == "r") {
-                      reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}")
-                   }
+                if (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs") {
+                   reporter.info(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}", force = true)
                 }
                 List(vd)
             }
