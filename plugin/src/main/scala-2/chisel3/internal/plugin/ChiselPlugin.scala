@@ -8,11 +8,16 @@ import nsc.plugins.{Plugin, PluginComponent}
 import scala.reflect.internal.util.NoPosition
 import scala.collection.mutable
 
-private[plugin] case class ChiselPluginArguments(val skipFiles: mutable.HashSet[String] = mutable.HashSet.empty) {
+private[plugin] case class ChiselPluginArguments(
+  val skipFiles: mutable.HashSet[String] = mutable.HashSet.empty,
+  var addDebugIntrinsics: Boolean = false
+) {
   def useBundlePluginOpt = "useBundlePlugin"
   def useBundlePluginFullOpt = s"-P:${ChiselPlugin.name}:$useBundlePluginOpt"
   def genBundleElementsOpt = "genBundleElements"
   def genBundleElementsFullOpt = s"-P:${ChiselPlugin.name}:$genBundleElementsOpt"
+  def addDebugIntrinsicsOpt = "addDebugIntrinsics"
+  def addDebugIntrinsicsFullOpt = s"-P:${ChiselPlugin.name}:$addDebugIntrinsicsOpt"
   // Annoying because this shouldn't be used by users
   def skipFilePluginOpt = "INTERNALskipFile:"
   def skipFilePluginFullOpt = s"-P:${ChiselPlugin.name}:$skipFilePluginOpt"
@@ -54,8 +59,12 @@ class ChiselPlugin(val global: Global) extends Plugin {
   val components: List[PluginComponent] = List[PluginComponent](
     new ChiselComponent(global, arguments),
     new BundleComponent(global, arguments),
-    new IdentifierComponent(global, arguments)
+    new IdentifierComponent(global, arguments),
+    new ComponentDebugIntrinsics(this, global, arguments)
   )
+
+  // Expose for ComponentDebugIntrinsics
+  def addDebugIntrinsics: Boolean = arguments.addDebugIntrinsics
 
   override def init(options: List[String], error: String => Unit): Boolean = {
     // Deprecate Scala 2.12 via the compiler plugin
@@ -76,6 +85,8 @@ class ChiselPlugin(val global: Global) extends Plugin {
       } else if (option == arguments.genBundleElementsOpt) {
         val msg = s"'${arguments.genBundleElementsOpt}' is now default behavior, you can remove the scalacOption."
         global.reporter.warning(NoPosition, msg)
+      } else if (option == arguments.addDebugIntrinsicsOpt) {
+        arguments.addDebugIntrinsics = true
       } else {
         error(s"Option not understood: '$option'")
       }

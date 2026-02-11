@@ -9,7 +9,11 @@ import scala.tools.nsc.plugins.{Plugin, PluginComponent}
   * This is a minimal dummy implementation for TDD.
   * It only verifies that the plugin loads correctly.
   */
-class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends PluginComponent {
+class ComponentDebugIntrinsics(
+  plugin: ChiselPlugin, 
+  val global: Global,
+  arguments: ChiselPluginArguments
+) extends PluginComponent {
   import global._
   
   val phaseName = "componentDebugIntrinsics"
@@ -20,7 +24,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
   def newPhase(prev: Phase): Phase = new StdPhase(prev) {
     def apply(unit: CompilationUnit): Unit = {
       // Dummy implementation - just log that we're running
-      if (plugin.addDebugIntrinsics) {
+      if (arguments.addDebugIntrinsics) {
         reporter.echo(unit.position(0), "[DEBUG-PLUGIN-LOADED] ComponentDebugIntrinsics running")
       }
     }
