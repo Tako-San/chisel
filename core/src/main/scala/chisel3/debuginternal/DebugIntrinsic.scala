@@ -16,11 +16,13 @@ object DebugIntrinsic {
   private val enumCache = TrieMap[String, String]()
 
   def isEnabled: Boolean = {
-    val enabled = sys.env.get("CHISEL_DEBUG").exists(_.toLowerCase == "true") ||
-                  sys.props.get("chisel.debug").exists(_.toLowerCase == "true")
-    if (!enabled && sys.props.get("chisel.debug.verbose").exists(_.toLowerCase == "true")) {
-      println(s"[DebugIntrinsic] Debug mode DISABLED. env: ${sys.env.get("CHISEL_DEBUG")}, props: ${sys.props.get("chisel.debug")}")
-    }
+    val env = sys.env.get("CHISEL_DEBUG")
+    val prop = sys.props.get("chisel.debug")
+    val enabled = env.exists(_.toLowerCase == "true") || prop.exists(_.toLowerCase == "true")
+    
+    // TRACE LOGGING
+    // Console.err.println(s"[DebugIntrinsic] isEnabled check: env=$env, prop=$prop -> $enabled")
+    
     enabled
   }
 
@@ -42,6 +44,9 @@ object DebugIntrinsic {
     target:  String,
     binding: String
   )(implicit sourceInfo: SourceInfo): Option[Unit] = {
+    // TRACE LOGGING - Unconditional to verify execution
+    Console.err.println(s"[DebugIntrinsic] emit called for target='$target', binding='$binding'. isEnabled=$isEnabled")
+
     if (!isEnabled) return None
     emitImpl(data, target, binding, sourceInfo)
   }
@@ -90,7 +95,6 @@ object DebugIntrinsic {
     target: String
   )(implicit sourceInfo: SourceInfo): Option[Unit] = {
     try {
-      // Force error if data is not hardware (null check or similar)
       if (data == null) throw new IllegalArgumentException(s"Data is null for target $target")
 
       val probeWire = Wire(Probe(data.cloneType))
@@ -99,10 +103,9 @@ object DebugIntrinsic {
       Some(())
     } catch {
       case NonFatal(e) =>
-        // ALWAYS print error to stderr for debugging purposes
         Console.err.println(s"[DebugIntrinsic] ERROR: Failed for '$target': ${e.getMessage}")
         e.printStackTrace(Console.err)
-        throw e // Rethrow to fail the test if runtime fails
+        throw e
     }
   }
 
