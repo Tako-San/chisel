@@ -60,11 +60,8 @@ class ChiselPlugin(val global: Global) extends Plugin {
     new ChiselComponent(global, arguments),
     new BundleComponent(global, arguments),
     new IdentifierComponent(global, arguments),
-    new ComponentDebugIntrinsics(this, global, arguments)
+    new ComponentDebugIntrinsics(global, arguments)
   )
-
-  // Expose for ComponentDebugIntrinsics
-  def addDebugIntrinsics: Boolean = arguments.addDebugIntrinsics
 
   override def init(options: List[String], error: String => Unit): Boolean = {
     // Deprecate Scala 2.12 via the compiler plugin
