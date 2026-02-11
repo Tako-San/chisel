@@ -34,16 +34,15 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
     private lazy val emitMethod: Symbol = {
       val intrinsicPkg = rootMirror.getPackageIfDefined("chisel3.debuginternal")
       if (intrinsicPkg == NoSymbol) {
-        // Only warn if debug is enabled to avoid spamming users who don't care
         if (settings.debug.value || plugin.addDebugIntrinsics) {
-          reporter.warning(NoPosition, "chisel3.debuginternal package not found - debug intrinsics disabled")
+          reporter.warning(NoPosition, "chisel3.debuginternal package not found - debug intrinsics disabled", force = true)
         }
         NoSymbol
       } else {
         val intrinsicObj = intrinsicPkg.info.member(TermName("DebugIntrinsic"))
         if (intrinsicObj == NoSymbol) {
           if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(NoPosition, "DebugIntrinsic object not found")
+            reporter.warning(NoPosition, "DebugIntrinsic object not found in chisel3.debuginternal", force = true)
           }
           NoSymbol
         } else {
@@ -52,8 +51,13 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       }
     }
 
-    private lazy val chiselDataClass: Symbol =
-      rootMirror.getClassIfDefined("chisel3.Data")
+    private lazy val chiselDataClass: Symbol = {
+      val sym = rootMirror.getClassIfDefined("chisel3.Data")
+      if (sym == NoSymbol && (settings.debug.value || plugin.addDebugIntrinsics)) {
+        reporter.warning(NoPosition, "chisel3.Data not found", force = true)
+      }
+      sym
+    }
 
     private lazy val chiselBundleClass: Symbol =
       rootMirror.getClassIfDefined("chisel3.Bundle")
@@ -78,6 +82,11 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
         case Select(_, TermName(n)) => names.contains(n)
         case Ident(TermName(n))     => names.contains(n)
         case _                      => false
+      }
+
+      // DEBUG: Log RHS structure for interesting fields
+      if ((settings.debug.value || plugin.addDebugIntrinsics) && (vd.name.toString == "state" || vd.name.toString == "r")) {
+         reporter.warning(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}", force = true)
       }
 
       vd.rhs match {
@@ -148,12 +157,27 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       if (vd.name.toString.startsWith("_")) return false
 
       // Must have valid symbol and be Chisel Data
-      vd.symbol != NoSymbol && isChiselData(vd.symbol)
+      val validSym = vd.symbol != NoSymbol
+      val isData = isChiselData(vd.symbol)
+      
+      if ((settings.debug.value || plugin.addDebugIntrinsics) && !validSym && vd.name.toString == "state") {
+         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol", force = true)
+      }
+      if ((settings.debug.value || plugin.addDebugIntrinsics) && !isData && vd.name.toString == "state") {
+         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}", force = true)
+      }
+
+      validSym && isData
     }
 
     /** Create typed DebugIntrinsic.emit call for a ValDef */
     private def mkEmitCall(vd: ValDef, bindingType: String): Tree = {
-      if (emitMethod == NoSymbol) return EmptyTree
+      if (emitMethod == NoSymbol) {
+         if (settings.debug.value || plugin.addDebugIntrinsics) {
+            reporter.warning(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}", force = true)
+         }
+         return EmptyTree
+      }
 
       if (settings.debug.value || plugin.addDebugIntrinsics) {
         reporter.info(
@@ -181,12 +205,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       localTyper.typed(emitCall)
     }
 
-    /** Inject emit calls into list of statements (flat strategy).
-     *
-     * CRITICAL: This method does NOT recursively transform trees.
-     * It only performs flat injection of emit calls after qualifying ValDefs.
-     * Recursive transformation happens explicitly in transform().
-     */
+    /** Inject emit calls into list of statements (flat strategy). */
     private def injectIntoStats(stats: List[Tree]): List[Tree] = {
       stats.flatMap { stat =>
         stat match {
@@ -195,12 +214,16 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
               case Some(binding) =>
                 val emitCall = mkEmitCall(vd, binding)
                 if (emitCall != EmptyTree) {
-                  // KEY: Return flat list [ValDef, EmitCall]
                   List(vd, emitCall)
                 } else {
                   List(vd)
                 }
               case None =>
+                if (settings.debug.value || plugin.addDebugIntrinsics) {
+                   if (vd.name.toString == "state" || vd.name.toString == "r") {
+                      reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}", force = true)
+                   }
+                }
                 List(vd)
             }
           case other =>
@@ -258,7 +281,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
       // Handle Bundle constructor (fields of Bundle classes)
       case dd @ DefDef(mods, nme.CONSTRUCTOR, tparams, vparamss, tpt, rhs) =>
-        // FIX: Check owner of constructor (the class), not constructor itself
         val ownerClass = currentOwner.owner
         val isBundleConstructor = if (chiselBundleClass != NoSymbol) {
           ownerClass.baseClasses.contains(chiselBundleClass)
@@ -287,7 +309,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
           super.transform(dd)
         }
 
-      // Recurse into other nodes
       case _ =>
         super.transform(tree)
     }
