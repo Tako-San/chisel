@@ -1,5 +1,6 @@
 package chisel3.internal.plugin
 
+import scala.annotation.tailrec
 import scala.tools.nsc
 import scala.tools.nsc.{Global, Phase}
 import scala.tools.nsc.plugins.PluginComponent
@@ -65,13 +66,62 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       }
     }
 
+    /**
+     * Recursively unwrap Chisel naming wrappers (withName, prefix) to find the actual constructor call.
+     * 
+     * Chisel wraps constructors for automatic naming:
+     *   val state = RegInit(0.U) 
+     * becomes:
+     *   Apply(withName("state"), [Apply(prefix("state"), [Apply(RegInit, ...)])])
+     * 
+     * This function strips those wrappers to access the underlying constructor.
+     */
+    @tailrec
+    private def unwrapWrappers(tree: Tree): Tree = tree match {
+      // Pattern: Apply(Apply(TypeApply(Select(..., wrapperName), ...), ...), [..., body])
+      // Matches both withName and prefix.apply patterns
+      case Apply(Apply(TypeApply(Select(_, name), _), _), args) 
+        if args.nonEmpty && (name.toString == "withName" || name.toString == "apply") =>
+        unwrapWrappers(args.last)
+      
+      // Base case: no more wrappers
+      case other => other
+    }
+
+    /**
+     * Extract binding type from RHS expression by unwrapping naming helpers
+     * and pattern matching on the actual Chisel constructor.
+     */
     private def extractBinding(rhs: Tree): String = {
-      rhs match {
-        case Apply(Select(_, TermName("RegInit" | "RegNext" | "Reg")), _) => "Reg"
-        case Apply(Select(_, TermName("Wire" | "WireInit" | "WireDefault")), _) => "Wire"
-        case Apply(Select(_, TermName("IO")), _) => "IO"
-        case Apply(Select(_, TermName("Mem")), _) => "Mem"
-        case _ => "Wire" // Default to Wire for unknown constructs that return Data
+      val unwrapped = unwrapWrappers(rhs)
+      
+      unwrapped match {
+        // RegInit, RegNext, Reg
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("RegInit" | "RegNext" | "Reg")), _), _), _), _) => 
+          "RegBinding"
+        
+        // Wire, WireDefault, WireInit
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Wire" | "WireDefault" | "WireInit")), _), _), _), _) => 
+          "WireBinding"
+        
+        // Input
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Input")), _), _), _) => 
+          "PortBinding(INPUT)"
+        
+        // Output
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Output")), _), _), _) => 
+          "PortBinding(OUTPUT)"
+        
+        // IO (contains ports)
+        case Apply(Apply(TypeApply(Select(_, TermName("IO")), _), _), _) => 
+          "PortBinding"
+        
+        // Mem
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => 
+          "MemBinding"
+        
+        // Fallback for unknown Data constructs
+        case _ => "WireBinding"
       }
     }
   }
