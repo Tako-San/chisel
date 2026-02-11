@@ -42,80 +42,34 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
           if (isChiselData) {
             val transformedRHS = transform(rhs)
             val binding = extractBinding(rhs)
-            val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
-            val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // Build: { emit(rhs, "name", "binding")(SourceLine(...))(UnlocatableSourceInfo); rhs }
-            // DebugIntrinsic.emit has signature: 
-            // def emit(data: Data, name: String, binding: String)(sl: SourceLine)(implicit sourceInfo: SourceInfo): Unit
+            // Build: { emit(rhs, "name", "binding")(UnlocatableSourceInfo); rhs }
+            
+            // Signature from DebugIntrinsic.scala:
+            // def emit(data: Data, target: String, binding: String)(implicit sourceInfo: SourceInfo): Option[Unit]
+            
+            // NOTE: There is NO (sl: SourceLine) parameter list in the definition provided!
+            // It was: def emit(data, target, binding)(implicit sourceInfo)
             
             val emitCall = Apply(
               Apply(
-                Apply(
-                  Select(
-                    Select(
-                      Select(Ident(TermName("chisel3")), TermName("debuginternal")),
-                      TermName("DebugIntrinsic")
-                    ),
-                    TermName("emit")
-                  ),
-                  List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
-                ),
-                List(
-                  Apply(
-                    Select(
-                      Select(
-                        Select(Ident(TermName("chisel3")), TermName("experimental")),
-                        TermName("SourceLine")
-                      ),
-                      TermName("apply")
-                    ),
-                    List(Literal(Constant(sourcePath)), Literal(Constant(sourceLine)), Literal(Constant(0)))
-                  )
-                )
-              ),
-              // Correctly pass UnlocatableSourceInfo as a value (object), not a type constructor call
-              List(
                 Select(
                   Select(
-                    Select(Ident(TermName("chisel3")), TermName("experimental")),
-                    TermName("UnlocatableSourceInfo")
+                    Select(Ident(TermName("chisel3")), TermName("debuginternal")),
+                    TermName("DebugIntrinsic")
                   ),
-                  // 'run' is a case object inside UnlocatableSourceInfo used as fallback, 
-                  // but typically we can use the object itself if it has implicit conversion, 
-                  // OR better: use SourceInfo.Unlocatable if available, but since UnlocatableSourceInfo is deprecated/moved often,
-                  // let's stick to what worked or what is standard.
-                  // Wait, previous error "Option[Unit] does not take parameters" suggests 'run' might be returning Unit?
-                  // Actually, UnlocatableSourceInfo is likely an object or trait.
-                  // If it is a deprecated type alias, we might need the object.
-                  // Let's try to access the implicit value that is usually available or construct a SourceLineInfo.
-                  
-                  // Retrying with simply `chisel3.experimental.UnlocatableSourceInfo` as the object itself
-                  // assuming it implements SourceInfo.
-                  // If UnlocatableSourceInfo is a trait, we need a concrete instance.
-                  // Usually `implicitly[SourceInfo]` would pick up something.
-                  // Let's check if we can reference `chisel3.experimental.UnlocatableSourceInfo` directly as a value.
-                  // If it's a deprecated object, it should work.
-                  // The previous error `Option[Unit] does not take parameters` is weird. 
-                  // It implies that `emit(...)` returned Unit (wrapped in Option?), and we tried to apply more args?
-                  // No, `emit` returns Unit.
-                  
-                  // Ah, `emit` returns Unit. Apply(Apply(emit...)) returns a Tree typed as Unit.
-                  // If we added a THIRD parameter list, and `emit` is defined as:
-                  // def emit(...)(...)(implicit ...): Unit
-                  // Then `Apply(..., List(implicit))` is correct.
-                  
-                  // The error "Option[Unit] does not take parameters" usually happens when you try to apply arguments to something that isn't a method/function.
-                  // This suggests `emit` might NOT have that third parameter list in the version we are compiling against?
-                  // OR `run` was interpreted as a method call returning Option[Unit]?
-                  
-                  // Let's look at `DebugIntrinsic.scala` via search if possible, or assume typical Chisel structure.
-                  // Assuming `emit` IS curried.
-                  
-                  // Let's try passing `UnlocatableSourceInfo` object directly without `.run`.
-                  // `run` is likely not the field we want.
-                  TermName("UnlocatableSourceInfo") 
-                )
+                  TermName("emit")
+                ),
+                List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
+              ),
+              List(
+                 Select(
+                    Select(
+                      Select(Ident(TermName("chisel3")), TermName("experimental")),
+                      TermName("UnlocatableSourceInfo")
+                    ),
+                    TermName("UnlocatableSourceInfo")
+                 )
               )
             )
             
