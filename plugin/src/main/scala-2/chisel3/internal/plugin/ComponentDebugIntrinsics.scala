@@ -164,7 +164,11 @@ class ComponentDebugIntrinsics(val global: Global) extends Plugin {
         if (emitMethod == NoSymbol) return EmptyTree
 
         if (settings.debug) {
-          reporter.info(vd.pos, s"Instrumenting ${vd.name} as $bindingType at ${vd.pos.source}:${vd.pos.line}")
+          reporter.info(
+            vd.pos,
+            s"Instrumenting ${vd.name} as $bindingType at ${vd.pos.source}:${vd.pos.line}",
+            force = true
+          )
         }
 
         val emitCall = Apply(
@@ -241,7 +245,11 @@ class ComponentDebugIntrinsics(val global: Global) extends Plugin {
 
           if (isChiselResult) {
             if (settings.debug) {
-              reporter.info(dd.pos, s"Instrumenting lazy val ${dd.name} with result type $resultType")
+              reporter.info(
+                dd.pos,
+                s"Instrumenting lazy val ${dd.name} with result type $resultType",
+                force = true
+              )
             }
 
             val newRhs = rhs match {
@@ -268,7 +276,11 @@ class ComponentDebugIntrinsics(val global: Global) extends Plugin {
 
           if (isBundleConstructor) {
             if (settings.debug) {
-              reporter.info(dd.pos, s"Instrumenting Bundle constructor in ${ownerClass.name}")
+              reporter.info(
+                dd.pos,
+                s"Instrumenting Bundle constructor in ${ownerClass.name}",
+                force = true
+              )
             }
 
             val newRhs = rhs match {
