@@ -89,6 +89,11 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
         case _                      => false
       }
 
+      // DEBUG: Log RHS structure for critical signals
+      if (vd.name.toString == "state" || vd.name.toString == "reg" || vd.name.toString == "regs") {
+         reporter.warning(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}")
+      }
+
       vd.rhs match {
         // Wire variants: Wire(), WireInit(), WireDefault()
         case Apply(fun, _) if matchesName(fun, Set("Wire", "WireInit", "WireDefault")) =>
@@ -160,6 +165,16 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       val validSym = vd.symbol != NoSymbol
       val isData = isChiselData(vd.symbol)
       
+      // DEBUG: Log filtering decisions for critical signals
+      if (vd.name.toString == "state" || vd.name.toString == "reg" || vd.name.toString == "regs") {
+        if (!validSym) {
+          reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol")
+        }
+        if (!isData) {
+          reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}")
+        }
+      }
+      
       validSym && isData
     }
 
@@ -168,10 +183,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       if (emitMethod == NoSymbol) return EmptyTree
 
       if (settings.debug.value || plugin.addDebugIntrinsics) {
-        reporter.info(
+        reporter.warning(
           vd.pos,
-          s"Instrumenting ${vd.name} as $bindingType at ${vd.pos.source}:${vd.pos.line}",
-          force = true
+          s"[INSTRUMENT] ${vd.name} as $bindingType at ${vd.pos.source}:${vd.pos.line}"
         )
       }
 
@@ -207,9 +221,8 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                   List(vd)
                 }
               case None =>
-                if (settings.debug.value || plugin.addDebugIntrinsics) {
-                   // Log failure to match only if debug is enabled
-                   // reporter.warning(vd.pos, s"Failed to extract binding for ${vd.name}")
+                if (vd.name.toString == "state" || vd.name.toString == "reg" || vd.name.toString == "regs") {
+                   reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}")
                 }
                 List(vd)
             }
@@ -247,10 +260,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
         if (isChiselResult) {
           if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.info(
+            reporter.warning(
               dd.pos,
-              s"Instrumenting lazy val ${dd.name} with result type $resultType",
-              force = true
+              s"[INSTRUMENT] lazy val ${dd.name} with result type $resultType"
             )
           }
 
@@ -277,10 +289,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
         if (isBundleConstructor) {
           if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.info(
+            reporter.warning(
               dd.pos,
-              s"Instrumenting Bundle constructor in ${ownerClass.name}",
-              force = true
+              s"[INSTRUMENT] Bundle constructor in ${ownerClass.name}"
             )
           }
 
