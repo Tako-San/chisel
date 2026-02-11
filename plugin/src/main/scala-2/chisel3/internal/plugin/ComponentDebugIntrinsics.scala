@@ -20,8 +20,10 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
     def isPluginEnabled: Boolean = plugin.addDebugIntrinsics
 
-    // Cache symbols to avoid repeated lookups
+    // Symbols needed for instrumentation
     private lazy val chiselDataSym = rootMirror.getClassIfDefined("chisel3.Data")
+    
+    // Use definitions.getModule for more robust symbol loading
     private lazy val unlocatableSourceInfoSym = rootMirror.getModuleIfDefined("chisel3.experimental.UnlocatableSourceInfo")
     private lazy val debugIntrinsicModuleSym = rootMirror.getModuleIfDefined("chisel3.debuginternal.DebugIntrinsic")
 
@@ -46,25 +48,35 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
               case Some(binding) =>
                 val transformedRHS = transform(rhs)
                 
-                // Use mkAttributedRef to safely generate reference to UnlocatableSourceInfo object
-                // This avoids NPEs in Erasure phase by ensuring symbols are attached
+                // Ensure symbols are loaded. If not, fallback to original tree to avoid crashes.
+                if (unlocatableSourceInfoSym == NoSymbol || debugIntrinsicModuleSym == NoSymbol) {
+                   return treeCopy.ValDef(vd, mods, name, tpt, transformedRHS)
+                }
+
+                // Correctly reference the object value
                 val sourceInfoArg = gen.mkAttributedRef(unlocatableSourceInfoSym)
+                
+                // Correctly reference the DebugIntrinsic.emit method
+                val emitSym = debugIntrinsicModuleSym.info.member(TermName("emit"))
+                val emitRef = Select(gen.mkAttributedRef(debugIntrinsicModuleSym), TermName("emit"))
+                                .setType(emitSym.info) // Explicitly set type to help Erasure
 
                 // Build: DebugIntrinsic.emit(rhs, name, binding)(sourceInfo)
                 val emitCall = Apply(
                   Apply(
-                    Select(gen.mkAttributedRef(debugIntrinsicModuleSym), TermName("emit")),
+                    emitRef,
                     List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
                   ),
                   List(sourceInfoArg)
                 )
+                // Set type for the Apply node if possible, though localTyper.typed will do it too
+                // emitCall.setType(typeOf[Option[Unit]]) 
                 
                 val instrumentedRHS = Block(List(emitCall), transformedRHS)
                 val typedInstrumented = localTyper.typed(instrumentedRHS)
                 treeCopy.ValDef(vd, mods, name, tpt, typedInstrumented)
                 
               case None =>
-                // Skip instrumentation for non-hardware Data (e.g. types like UInt(8.W), plain Bundles)
                 super.transform(tree)
             }
           } else {
@@ -82,7 +94,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       case other => other
     }
 
-    // Strict binding extraction - only instrument known hardware constructors
+    // Strict binding extraction
     private def extractBinding(rhs: Tree): Option[String] = {
       val unwrapped = unwrapWrappers(rhs)
       unwrapped match {
@@ -96,7 +108,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
         case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => Some("MemBinding")
         case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("SyncReadMem")), _), _), _), _) => Some("MemBinding")
         
-        // Explicitly return None for everything else to avoid "ExpectedHardwareException" on types
         case _ => None
       }
     }
