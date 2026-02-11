@@ -45,12 +45,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
             
             // Build: { emit(rhs, "name", "binding")(UnlocatableSourceInfo); rhs }
             
-            // Signature from DebugIntrinsic.scala:
-            // def emit(data: Data, target: String, binding: String)(implicit sourceInfo: SourceInfo): Option[Unit]
-            
-            // NOTE: There is NO (sl: SourceLine) parameter list in the definition provided!
-            // It was: def emit(data, target, binding)(implicit sourceInfo)
-            
             val emitCall = Apply(
               Apply(
                 Select(
@@ -63,13 +57,15 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                 List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
               ),
               List(
-                 Select(
-                    Select(
-                      Select(Ident(TermName("chisel3")), TermName("experimental")),
-                      TermName("UnlocatableSourceInfo")
-                    ),
-                    TermName("UnlocatableSourceInfo")
-                 )
+                // Directly selecting the object 'UnlocatableSourceInfo' from package 'chisel3.experimental'
+                // Previous error "value UnlocatableSourceInfo is not a member of object UnlocatableSourceInfo"
+                // happened because we did Select(Select(..., "UnlocatableSourceInfo"), "UnlocatableSourceInfo")
+                // treating the object as a package/container.
+                
+                Select(
+                   Select(Ident(TermName("chisel3")), TermName("experimental")),
+                   TermName("UnlocatableSourceInfo")
+                )
               )
             )
             
