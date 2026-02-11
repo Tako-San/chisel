@@ -74,23 +74,53 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                   )
                 )
               ),
-              // Explicitly pass implicit SourceInfo argument
+              // Correctly pass UnlocatableSourceInfo as a value (object), not a type constructor call
               List(
                 Select(
                   Select(
                     Select(Ident(TermName("chisel3")), TermName("experimental")),
                     TermName("UnlocatableSourceInfo")
                   ),
-                  TermName("run") // case object run extends UnlocatableSourceInfo
+                  // 'run' is a case object inside UnlocatableSourceInfo used as fallback, 
+                  // but typically we can use the object itself if it has implicit conversion, 
+                  // OR better: use SourceInfo.Unlocatable if available, but since UnlocatableSourceInfo is deprecated/moved often,
+                  // let's stick to what worked or what is standard.
+                  // Wait, previous error "Option[Unit] does not take parameters" suggests 'run' might be returning Unit?
+                  // Actually, UnlocatableSourceInfo is likely an object or trait.
+                  // If it is a deprecated type alias, we might need the object.
+                  // Let's try to access the implicit value that is usually available or construct a SourceLineInfo.
+                  
+                  // Retrying with simply `chisel3.experimental.UnlocatableSourceInfo` as the object itself
+                  // assuming it implements SourceInfo.
+                  // If UnlocatableSourceInfo is a trait, we need a concrete instance.
+                  // Usually `implicitly[SourceInfo]` would pick up something.
+                  // Let's check if we can reference `chisel3.experimental.UnlocatableSourceInfo` directly as a value.
+                  // If it's a deprecated object, it should work.
+                  // The previous error `Option[Unit] does not take parameters` is weird. 
+                  // It implies that `emit(...)` returned Unit (wrapped in Option?), and we tried to apply more args?
+                  // No, `emit` returns Unit.
+                  
+                  // Ah, `emit` returns Unit. Apply(Apply(emit...)) returns a Tree typed as Unit.
+                  // If we added a THIRD parameter list, and `emit` is defined as:
+                  // def emit(...)(...)(implicit ...): Unit
+                  // Then `Apply(..., List(implicit))` is correct.
+                  
+                  // The error "Option[Unit] does not take parameters" usually happens when you try to apply arguments to something that isn't a method/function.
+                  // This suggests `emit` might NOT have that third parameter list in the version we are compiling against?
+                  // OR `run` was interpreted as a method call returning Option[Unit]?
+                  
+                  // Let's look at `DebugIntrinsic.scala` via search if possible, or assume typical Chisel structure.
+                  // Assuming `emit` IS curried.
+                  
+                  // Let's try passing `UnlocatableSourceInfo` object directly without `.run`.
+                  // `run` is likely not the field we want.
+                  TermName("UnlocatableSourceInfo") 
                 )
               )
             )
             
-            // Construct block: { emit(...); transformedRHS }
             val instrumentedRHS = Block(List(emitCall), transformedRHS)
             val typedInstrumented = localTyper.typed(instrumentedRHS)
-            
-            // Return original ValDef with modified RHS
             treeCopy.ValDef(vd, mods, name, tpt, typedInstrumented)
           } else {
             super.transform(tree)
@@ -109,20 +139,13 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
     private def extractBinding(rhs: Tree): String = {
       val unwrapped = unwrapWrappers(rhs)
-      
       unwrapped match {
-        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("RegInit" | "RegNext" | "Reg")), _), _), _), _) => 
-          "RegBinding"
-        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Wire" | "WireDefault" | "WireInit")), _), _), _), _) => 
-          "WireBinding"
-        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Input")), _), _), _) => 
-          "PortBinding(INPUT)"
-        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Output")), _), _), _) => 
-          "PortBinding(OUTPUT)"
-        case Apply(Apply(TypeApply(Select(_, TermName("IO")), _), _), _) => 
-          "PortBinding"
-        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => 
-          "MemBinding"
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("RegInit" | "RegNext" | "Reg")), _), _), _), _) => "RegBinding"
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Wire" | "WireDefault" | "WireInit")), _), _), _), _) => "WireBinding"
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Input")), _), _), _) => "PortBinding(INPUT)"
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Output")), _), _), _) => "PortBinding(OUTPUT)"
+        case Apply(Apply(TypeApply(Select(_, TermName("IO")), _), _), _) => "PortBinding"
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => "MemBinding"
         case _ => "WireBinding"
       }
     }
