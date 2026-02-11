@@ -188,7 +188,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       if (settings.debug.value || plugin.addDebugIntrinsics) {
         reporter.warning(
           vd.pos,
-          s"[INSTRUMENT] ${vd.name} as $bindingType at ${vd.pos.source}:${vd.pos.line}"
+          s"[INSTRUMENT-V2] ${vd.name} as $bindingType at ${vd.pos.source}:${vd.pos.line}"
         )
       }
 
@@ -240,7 +240,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       // Handle class/object bodies (Template)
       case tmpl @ Template(parents, self, body) =>
         if (settings.debug.value || plugin.addDebugIntrinsics) {
-          reporter.warning(tmpl.pos, s"[DEBUG-TEMPLATE] Visiting template of ${currentOwner.name}")
+          reporter.warning(tmpl.pos, s"[DEBUG-TEMPLATE-V2] Visiting template of ${currentOwner.name}")
         }
         val injected = injectIntoStats(body)
         val transformed = injected.map(transform)
@@ -268,7 +268,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
           if (settings.debug.value || plugin.addDebugIntrinsics) {
             reporter.warning(
               dd.pos,
-              s"[INSTRUMENT] lazy val ${dd.name} with result type $resultType"
+              s"[INSTRUMENT-V2] lazy val ${dd.name} with result type $resultType"
             )
           }
 
@@ -298,7 +298,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
           if (settings.debug.value || plugin.addDebugIntrinsics) {
             reporter.warning(
               dd.pos,
-              s"[INSTRUMENT] Component constructor in ${ownerClass.name}"
+              s"[INSTRUMENT-V2] Component constructor in ${ownerClass.name}"
             )
           }
 
