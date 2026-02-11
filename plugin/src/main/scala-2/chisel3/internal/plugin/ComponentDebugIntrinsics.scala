@@ -20,6 +20,11 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
     def isPluginEnabled: Boolean = plugin.addDebugIntrinsics
 
+    // Cache symbols to avoid repeated lookups
+    private lazy val chiselDataSym = rootMirror.getClassIfDefined("chisel3.Data")
+    private lazy val unlocatableSourceInfoSym = rootMirror.getModuleIfDefined("chisel3.experimental.UnlocatableSourceInfo")
+    private lazy val debugIntrinsicModuleSym = rootMirror.getModuleIfDefined("chisel3.debuginternal.DebugIntrinsic")
+
     override def transform(tree: Tree): Tree = {
       if (shouldSkip || !isPluginEnabled) {
         return super.transform(tree)
@@ -32,46 +37,36 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
              !name.toString.startsWith("_probe") && 
              rhs.nonEmpty =>
           
-          val isChiselData = try {
-            val dataSym = rootMirror.getClassIfDefined("chisel3.Data")
-            dataSym != NoSymbol && tpt.tpe != null && tpt.tpe <:< dataSym.tpe
-          } catch {
-            case _: Throwable => false
-          }
+          val isChiselData = chiselDataSym != NoSymbol && tpt.tpe != null && tpt.tpe <:< chiselDataSym.tpe
 
           if (isChiselData) {
-            val transformedRHS = transform(rhs)
-            val binding = extractBinding(rhs)
+            val bindingOpt = extractBinding(rhs)
             
-            // Build: { emit(rhs, "name", "binding")(UnlocatableSourceInfo); rhs }
-            
-            val emitCall = Apply(
-              Apply(
-                Select(
-                  Select(
-                    Select(Ident(TermName("chisel3")), TermName("debuginternal")),
-                    TermName("DebugIntrinsic")
-                  ),
-                  TermName("emit")
-                ),
-                List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
-              ),
-              List(
-                // Directly selecting the object 'UnlocatableSourceInfo' from package 'chisel3.experimental'
-                // Previous error "value UnlocatableSourceInfo is not a member of object UnlocatableSourceInfo"
-                // happened because we did Select(Select(..., "UnlocatableSourceInfo"), "UnlocatableSourceInfo")
-                // treating the object as a package/container.
+            bindingOpt match {
+              case Some(binding) =>
+                val transformedRHS = transform(rhs)
                 
-                Select(
-                   Select(Ident(TermName("chisel3")), TermName("experimental")),
-                   TermName("UnlocatableSourceInfo")
+                // Use mkAttributedRef to safely generate reference to UnlocatableSourceInfo object
+                // This avoids NPEs in Erasure phase by ensuring symbols are attached
+                val sourceInfoArg = gen.mkAttributedRef(unlocatableSourceInfoSym)
+
+                // Build: DebugIntrinsic.emit(rhs, name, binding)(sourceInfo)
+                val emitCall = Apply(
+                  Apply(
+                    Select(gen.mkAttributedRef(debugIntrinsicModuleSym), TermName("emit")),
+                    List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
+                  ),
+                  List(sourceInfoArg)
                 )
-              )
-            )
-            
-            val instrumentedRHS = Block(List(emitCall), transformedRHS)
-            val typedInstrumented = localTyper.typed(instrumentedRHS)
-            treeCopy.ValDef(vd, mods, name, tpt, typedInstrumented)
+                
+                val instrumentedRHS = Block(List(emitCall), transformedRHS)
+                val typedInstrumented = localTyper.typed(instrumentedRHS)
+                treeCopy.ValDef(vd, mods, name, tpt, typedInstrumented)
+                
+              case None =>
+                // Skip instrumentation for non-hardware Data (e.g. types like UInt(8.W), plain Bundles)
+                super.transform(tree)
+            }
           } else {
             super.transform(tree)
           }
@@ -87,16 +82,22 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       case other => other
     }
 
-    private def extractBinding(rhs: Tree): String = {
+    // Strict binding extraction - only instrument known hardware constructors
+    private def extractBinding(rhs: Tree): Option[String] = {
       val unwrapped = unwrapWrappers(rhs)
       unwrapped match {
-        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("RegInit" | "RegNext" | "Reg")), _), _), _), _) => "RegBinding"
-        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Wire" | "WireDefault" | "WireInit")), _), _), _), _) => "WireBinding"
-        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Input")), _), _), _) => "PortBinding(INPUT)"
-        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Output")), _), _), _) => "PortBinding(OUTPUT)"
-        case Apply(Apply(TypeApply(Select(_, TermName("IO")), _), _), _) => "PortBinding"
-        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => "MemBinding"
-        case _ => "WireBinding"
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("RegInit" | "RegNext" | "Reg")), _), _), _), _) => Some("RegBinding")
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Wire" | "WireDefault" | "WireInit")), _), _), _), _) => Some("WireBinding")
+        // IOs
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Input")), _), _), _) => Some("PortBinding(INPUT)")
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Output")), _), _), _) => Some("PortBinding(OUTPUT)")
+        case Apply(Apply(TypeApply(Select(_, TermName("IO")), _), _), _) => Some("PortBinding")
+        // Memories
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => Some("MemBinding")
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("SyncReadMem")), _), _), _), _) => Some("MemBinding")
+        
+        // Explicitly return None for everything else to avoid "ExpectedHardwareException" on types
+        case _ => None
       }
     }
   }
