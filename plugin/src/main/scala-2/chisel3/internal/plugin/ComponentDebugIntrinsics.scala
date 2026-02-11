@@ -79,6 +79,25 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       tpe.baseClasses.contains(chiselDataClass)
     }
 
+    /** Check if owner is a Module or Bundle */
+    private def isChiselComponent(owner: Symbol): Boolean = {
+      if (owner == NoSymbol) return false
+      
+      val isModule = if (chiselModuleClass != NoSymbol) {
+        owner.baseClasses.contains(chiselModuleClass)
+      } else {
+        false
+      }
+      
+      val isBundle = if (chiselBundleClass != NoSymbol) {
+        owner.baseClasses.contains(chiselBundleClass)
+      } else {
+        false
+      }
+      
+      isModule || isBundle
+    }
+
     /** Extract binding type from ValDef (Wire, Reg, Input, Output, IO) */
     private def extractBinding(vd: ValDef): Option[String] = {
       
@@ -273,13 +292,26 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       case tmpl @ Template(parents, self, body) =>
         if (settings.debug.value || plugin.addDebugIntrinsics) {
           reporter.warning(tmpl.pos, s"[DEBUG-TEMPLATE-V2] Visiting template of ${currentOwner.name} with ${body.length} statements")
+          reporter.warning(tmpl.pos, s"[DIAG] currentOwner=${currentOwner.name}, isChiselComponent=${isChiselComponent(currentOwner)}")
         }
-        val injected = injectIntoStats(body)
-        val transformed = injected.map(transform)
+        
+        // Only process templates of Chisel components
+        val shouldProcess = isChiselComponent(currentOwner)
+        
+        if (plugin.addDebugIntrinsics) {
+          reporter.warning(tmpl.pos, s"[DIAG] shouldProcess=${shouldProcess}")
+        }
+        
+        if (shouldProcess) {
+          val injected = injectIntoStats(body)
+          val transformed = injected.map(transform)
 
-        val newTmpl =
-          treeCopy.Template(tmpl, parents.map(transform), transform(self).asInstanceOf[ValDef], transformed)
-        localTyper.typedPos(tmpl.pos)(newTmpl)
+          val newTmpl =
+            treeCopy.Template(tmpl, parents.map(transform), transform(self).asInstanceOf[ValDef], transformed)
+          localTyper.typedPos(tmpl.pos)(newTmpl)
+        } else {
+          super.transform(tmpl)
+        }
 
       // Handle method bodies and local blocks
       case blk @ Block(stats, expr) =>
@@ -321,13 +353,8 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
       // Handle Bundle AND Module constructors
       case dd @ DefDef(mods, nme.CONSTRUCTOR, tparams, vparamss, tpt, rhs) =>
-        val ownerClass = currentOwner.owner
-        val isComponent = if (chiselBundleClass != NoSymbol) {
-          ownerClass.baseClasses.contains(chiselBundleClass) || 
-          (chiselModuleClass != NoSymbol && ownerClass.baseClasses.contains(chiselModuleClass))
-        } else {
-          false
-        }
+        val ownerClass = currentOwner
+        val isComponent = isChiselComponent(ownerClass)
 
         if (isComponent) {
           if (settings.debug.value || plugin.addDebugIntrinsics) {
