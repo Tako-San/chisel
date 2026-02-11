@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // RUN: scala-cli compile %s --scala %SCALAVERSION --extra-jars=%RUNCLASSPATH --scala-option="-Xplugin:%SCALAPLUGINJARS" --scala-option="-P:chiselplugin:addDebugIntrinsics" 2>&1 | FileCheck %s
-// CHECK: [CHISEL-DEBUG-INTRINSICS] Phase running
+// CHECK: Phase running on:
 
 import chisel3._
 
