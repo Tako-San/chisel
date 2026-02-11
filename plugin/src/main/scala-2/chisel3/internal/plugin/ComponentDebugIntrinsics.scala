@@ -16,7 +16,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
   def newTransformer(unit: CompilationUnit): Transformer = new DebugIntrinsicsTransformer(unit)
 
   class DebugIntrinsicsTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
-    // Tests are crucial for verification, do not skip them!
     val shouldSkip = false
 
     def isPluginEnabled: Boolean = plugin.addDebugIntrinsics
@@ -41,24 +40,47 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
           }
 
           if (isChiselData) {
-            val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
             val transformedRHS = transform(rhs)
-            
             val binding = extractBinding(rhs)
             val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
             val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
             
-            // Generate emission call
-            // Fix: Use SourceLine explicitly instead of incorrectly calling macro materialize
-            // SourceLine(filename: String, line: Int, col: Int)
-            val block = q"""{ 
-              val $tempName = $transformedRHS;
-              chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
-                chisel3.experimental.SourceLine($sourcePath, $sourceLine, 0)
-              );
-              $tempName 
-            }"""
-            localTyper.typed(block)
+            // Build: { emit(rhs, "name", "binding"); rhs }
+            // Using Apply nodes directly to avoid DefDef creation
+            val emitCall = Apply(
+              Apply(
+                Apply(
+                  Select(
+                    Select(
+                      Select(Ident(TermName("chisel3")), TermName("debuginternal")),
+                      TermName("DebugIntrinsic")
+                    ),
+                    TermName("emit")
+                  ),
+                  List(transformedRHS, Literal(Constant(name.toString)), Literal(Constant(binding)))
+                ),
+                Nil
+              ),
+              List(
+                Apply(
+                  Select(
+                    Select(
+                      Select(Ident(TermName("chisel3")), TermName("experimental")),
+                      TermName("SourceLine")
+                    ),
+                    TermName("apply")
+                  ),
+                  List(Literal(Constant(sourcePath)), Literal(Constant(sourceLine)), Literal(Constant(0)))
+                )
+              )
+            )
+            
+            // Construct block: { emit(...); transformedRHS }
+            val instrumentedRHS = Block(List(emitCall), transformedRHS)
+            val typedInstrumented = localTyper.typed(instrumentedRHS)
+            
+            // Return original ValDef with modified RHS
+            treeCopy.ValDef(vd, mods, name, tpt, typedInstrumented)
           } else {
             super.transform(tree)
           }
@@ -66,61 +88,30 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       }
     }
 
-    /**
-     * Recursively unwrap Chisel naming wrappers (withName, prefix) to find the actual constructor call.
-     * 
-     * Chisel wraps constructors for automatic naming:
-     *   val state = RegInit(0.U) 
-     * becomes:
-     *   Apply(withName("state"), [Apply(prefix("state"), [Apply(RegInit, ...)])])
-     * 
-     * This function strips those wrappers to access the underlying constructor.
-     */
     @tailrec
     private def unwrapWrappers(tree: Tree): Tree = tree match {
-      // Pattern: Apply(Apply(TypeApply(Select(..., wrapperName), ...), ...), [..., body])
-      // Matches both withName and prefix.apply patterns
       case Apply(Apply(TypeApply(Select(_, name), _), _), args) 
         if args.nonEmpty && (name.toString == "withName" || name.toString == "apply") =>
         unwrapWrappers(args.last)
-      
-      // Base case: no more wrappers
       case other => other
     }
 
-    /**
-     * Extract binding type from RHS expression by unwrapping naming helpers
-     * and pattern matching on the actual Chisel constructor.
-     */
     private def extractBinding(rhs: Tree): String = {
       val unwrapped = unwrapWrappers(rhs)
       
       unwrapped match {
-        // RegInit, RegNext, Reg
         case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("RegInit" | "RegNext" | "Reg")), _), _), _), _) => 
           "RegBinding"
-        
-        // Wire, WireDefault, WireInit
         case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Wire" | "WireDefault" | "WireInit")), _), _), _), _) => 
           "WireBinding"
-        
-        // Input
         case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Input")), _), _), _) => 
           "PortBinding(INPUT)"
-        
-        // Output
         case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Output")), _), _), _) => 
           "PortBinding(OUTPUT)"
-        
-        // IO (contains ports)
         case Apply(Apply(TypeApply(Select(_, TermName("IO")), _), _), _) => 
           "PortBinding"
-        
-        // Mem
         case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => 
           "MemBinding"
-        
-        // Fallback for unknown Data constructs
         case _ => "WireBinding"
       }
     }
