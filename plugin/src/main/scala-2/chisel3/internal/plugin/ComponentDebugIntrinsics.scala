@@ -92,11 +92,6 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
         case _                      => false
       }
 
-      // DEBUG: Log RHS structure for critical signals
-      if (vd.name.toString == "state" || vd.name.toString == "reg" || vd.name.toString == "regs") {
-         reporter.warning(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}")
-      }
-
       vd.rhs match {
         // Wire variants: Wire(), WireInit(), WireDefault()
         case Apply(fun, _) if matchesName(fun, Set("Wire", "WireInit", "WireDefault")) =>
@@ -153,32 +148,60 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
     private def shouldInstrument(vd: ValDef): Boolean = {
       val mods = vd.mods
 
+      // DIAGNOSTIC: Always log ValDef inspection
+      if (plugin.addDebugIntrinsics) {
+        reporter.warning(vd.pos, s"[DIAG] Inspecting ValDef: ${vd.name} (flags: ${mods.flags})")
+      }
+
       // Skip constructor parameters
-      if (mods.hasFlag(Flag.PARAM)) return false
+      if (mods.hasFlag(Flag.PARAM)) {
+        if (plugin.addDebugIntrinsics) {
+          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: PARAM flag")
+        }
+        return false
+      }
 
       // Skip synthetic fields, BUT allow Chisel Data types
       if (mods.hasFlag(Flag.SYNTHETIC)) {
-        if (!isChiselData(vd.symbol)) return false
+        if (!isChiselData(vd.symbol)) {
+          if (plugin.addDebugIntrinsics) {
+            reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: SYNTHETIC but not Chisel Data")
+          }
+          return false
+        }
       }
 
       // Skip private Chisel internal fields (convention: start with '_')
-      if (vd.name.toString.startsWith("_")) return false
+      if (vd.name.toString.startsWith("_")) {
+        if (plugin.addDebugIntrinsics) {
+          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: starts with underscore")
+        }
+        return false
+      }
 
       // Must have valid symbol and be Chisel Data
       val validSym = vd.symbol != NoSymbol
       val isData = isChiselData(vd.symbol)
       
-      // DEBUG: Log filtering decisions for critical signals
-      if (vd.name.toString == "state" || vd.name.toString == "reg" || vd.name.toString == "regs") {
-        if (!validSym) {
-          reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol")
+      if (!validSym) {
+        if (plugin.addDebugIntrinsics) {
+          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: NoSymbol")
         }
-        if (!isData) {
-          reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}")
-        }
+        return false
       }
       
-      validSym && isData
+      if (!isData) {
+        if (plugin.addDebugIntrinsics) {
+          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: Not Chisel Data. Symbol type: ${vd.symbol.info}, Base classes: ${vd.symbol.info.baseClasses.take(5)}")
+        }
+        return false
+      }
+
+      if (plugin.addDebugIntrinsics) {
+        reporter.warning(vd.pos, s"[DIAG] ${vd.name} PASSED all checks!")
+      }
+      
+      true
     }
 
     /** Create typed DebugIntrinsic.emit call for a ValDef */
@@ -212,6 +235,15 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
     /** Inject emit calls into list of statements (flat strategy). */
     private def injectIntoStats(stats: List[Tree]): List[Tree] = {
+      // DIAGNOSTIC: Log stats inspection
+      if (plugin.addDebugIntrinsics) {
+        reporter.warning(NoPosition, s"[DIAG] injectIntoStats called with ${stats.length} statements")
+        stats.foreach {
+          case vd: ValDef => reporter.warning(vd.pos, s"[DIAG] - Found ValDef: ${vd.name}")
+          case other => reporter.warning(other.pos, s"[DIAG] - Found: ${other.getClass.getSimpleName}")
+        }
+      }
+
       stats.flatMap { stat =>
         stat match {
           case vd @ ValDef(mods, name, tpt, rhs) if shouldInstrument(vd) =>
@@ -224,8 +256,8 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                   List(vd)
                 }
               case None =>
-                if (vd.name.toString == "state" || vd.name.toString == "reg" || vd.name.toString == "regs") {
-                   reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}")
+                if (plugin.addDebugIntrinsics) {
+                  reporter.warning(vd.pos, s"[DIAG] ${vd.name} passed shouldInstrument but no binding found")
                 }
                 List(vd)
             }
@@ -240,7 +272,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       // Handle class/object bodies (Template)
       case tmpl @ Template(parents, self, body) =>
         if (settings.debug.value || plugin.addDebugIntrinsics) {
-          reporter.warning(tmpl.pos, s"[DEBUG-TEMPLATE-V2] Visiting template of ${currentOwner.name}")
+          reporter.warning(tmpl.pos, s"[DEBUG-TEMPLATE-V2] Visiting template of ${currentOwner.name} with ${body.length} statements")
         }
         val injected = injectIntoStats(body)
         val transformed = injected.map(transform)
@@ -251,6 +283,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
       // Handle method bodies and local blocks
       case blk @ Block(stats, expr) =>
+        if (plugin.addDebugIntrinsics) {
+          reporter.warning(blk.pos, s"[DIAG] Processing Block with ${stats.length} stats")
+        }
         val injected = injectIntoStats(stats)
         val transformed = injected.map(transform)
 
