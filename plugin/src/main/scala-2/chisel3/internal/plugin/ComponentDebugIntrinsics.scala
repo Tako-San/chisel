@@ -84,9 +84,9 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
         case _                      => false
       }
 
-      // DEBUG: Log RHS structure for test signals
-      if (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs") {
-         reporter.info(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}", force = true)
+      // DEBUG: Throw exception to confirm execution path
+      if (vd.name.toString == "state" || vd.name.toString == "regs") {
+         throw new RuntimeException(s"[DEBUG-EXCEPTION] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}")
       }
 
       vd.rhs match {
@@ -160,21 +160,14 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       val validSym = vd.symbol != NoSymbol
       val isData = isChiselData(vd.symbol)
       
-      if (!validSym && (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs")) {
-         reporter.info(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol", force = true)
-      }
-      if (!isData && (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs")) {
-         reporter.info(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}", force = true)
-      }
-
       validSym && isData
     }
 
     /** Create typed DebugIntrinsic.emit call for a ValDef */
     private def mkEmitCall(vd: ValDef, bindingType: String): Tree = {
       if (emitMethod == NoSymbol) {
-         if (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs") {
-            reporter.info(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}", force = true)
+         if (settings.debug.value || plugin.addDebugIntrinsics) {
+            reporter.warning(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}")
          }
          return EmptyTree
       }
@@ -219,8 +212,10 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                   List(vd)
                 }
               case None =>
-                if (vd.name.toString == "state" || vd.name.toString == "r" || vd.name.toString == "regs") {
-                   reporter.info(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}", force = true)
+                if (settings.debug.value || plugin.addDebugIntrinsics) {
+                   if (vd.name.toString == "state" || vd.name.toString == "r") {
+                      reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}")
+                   }
                 }
                 List(vd)
             }
