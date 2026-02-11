@@ -35,14 +35,14 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       val intrinsicPkg = rootMirror.getPackageIfDefined("chisel3.debuginternal")
       if (intrinsicPkg == NoSymbol) {
         if (settings.debug.value || plugin.addDebugIntrinsics) {
-          reporter.warning(NoPosition, "chisel3.debuginternal package not found - debug intrinsics disabled", force = true)
+          reporter.warning(NoPosition, "chisel3.debuginternal package not found - debug intrinsics disabled")
         }
         NoSymbol
       } else {
         val intrinsicObj = intrinsicPkg.info.member(TermName("DebugIntrinsic"))
         if (intrinsicObj == NoSymbol) {
           if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(NoPosition, "DebugIntrinsic object not found in chisel3.debuginternal", force = true)
+            reporter.warning(NoPosition, "DebugIntrinsic object not found in chisel3.debuginternal")
           }
           NoSymbol
         } else {
@@ -54,7 +54,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
     private lazy val chiselDataClass: Symbol = {
       val sym = rootMirror.getClassIfDefined("chisel3.Data")
       if (sym == NoSymbol && (settings.debug.value || plugin.addDebugIntrinsics)) {
-        reporter.warning(NoPosition, "chisel3.Data not found", force = true)
+        reporter.warning(NoPosition, "chisel3.Data not found")
       }
       sym
     }
@@ -86,7 +86,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
       // DEBUG: Log RHS structure for interesting fields
       if ((settings.debug.value || plugin.addDebugIntrinsics) && (vd.name.toString == "state" || vd.name.toString == "r")) {
-         reporter.warning(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}", force = true)
+         reporter.warning(vd.pos, s"[DEBUG] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}")
       }
 
       vd.rhs match {
@@ -161,10 +161,10 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
       val isData = isChiselData(vd.symbol)
       
       if ((settings.debug.value || plugin.addDebugIntrinsics) && !validSym && vd.name.toString == "state") {
-         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol", force = true)
+         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: NoSymbol")
       }
       if ((settings.debug.value || plugin.addDebugIntrinsics) && !isData && vd.name.toString == "state") {
-         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}", force = true)
+         reporter.warning(vd.pos, s"[DEBUG] ${vd.name} skipped: Not Chisel Data. Base classes: ${vd.symbol.info.baseClasses}")
       }
 
       validSym && isData
@@ -174,7 +174,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
     private def mkEmitCall(vd: ValDef, bindingType: String): Tree = {
       if (emitMethod == NoSymbol) {
          if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}", force = true)
+            reporter.warning(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}")
          }
          return EmptyTree
       }
@@ -221,7 +221,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
               case None =>
                 if (settings.debug.value || plugin.addDebugIntrinsics) {
                    if (vd.name.toString == "state" || vd.name.toString == "r") {
-                      reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}", force = true)
+                      reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}")
                    }
                 }
                 List(vd)
