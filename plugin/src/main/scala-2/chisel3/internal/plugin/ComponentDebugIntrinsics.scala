@@ -78,15 +78,15 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
     /** Extract binding type from ValDef (Wire, Reg, Input, Output, IO) */
     private def extractBinding(vd: ValDef): Option[String] = {
+      
+      // Extended matching logic to handle object apply calls (e.g. RegInit.apply)
       def matchesName(tree: Tree, names: Set[String]): Boolean = tree match {
+        // Handle explicit .apply() calls on objects
+        case Select(qual, TermName("apply")) => matchesName(qual, names)
+        // Handle method calls
         case Select(_, TermName(n)) => names.contains(n)
         case Ident(TermName(n))     => names.contains(n)
         case _                      => false
-      }
-
-      // DEBUG: Throw exception to confirm execution path
-      if (vd.name.toString == "state" || vd.name.toString == "regs") {
-         throw new RuntimeException(s"[DEBUG-EXCEPTION] Inspecting RHS for ${vd.name}: ${showRaw(vd.rhs)}")
       }
 
       vd.rhs match {
@@ -165,12 +165,7 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
 
     /** Create typed DebugIntrinsic.emit call for a ValDef */
     private def mkEmitCall(vd: ValDef, bindingType: String): Tree = {
-      if (emitMethod == NoSymbol) {
-         if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(vd.pos, s"[DEBUG] emitMethod is NoSymbol, cannot instrument ${vd.name}")
-         }
-         return EmptyTree
-      }
+      if (emitMethod == NoSymbol) return EmptyTree
 
       if (settings.debug.value || plugin.addDebugIntrinsics) {
         reporter.info(
@@ -213,9 +208,8 @@ class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends
                 }
               case None =>
                 if (settings.debug.value || plugin.addDebugIntrinsics) {
-                   if (vd.name.toString == "state" || vd.name.toString == "r") {
-                      reporter.warning(vd.pos, s"[DEBUG] Failed to extract binding for ${vd.name}")
-                   }
+                   // Log failure to match only if debug is enabled
+                   // reporter.warning(vd.pos, s"Failed to extract binding for ${vd.name}")
                 }
                 List(vd)
             }
