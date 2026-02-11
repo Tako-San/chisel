@@ -7,7 +7,10 @@
 // RUN:   --scala-option="-Xplugin:%SCALAPLUGINJARS" \
 // RUN:   --scala-option="-P:chiselplugin:addDebugIntrinsics" \
 // RUN:   --scala-option "-Xprint:componentDebugIntrinsics" \
+// RUN:   --java-opt="-Dchisel.debug=true" \
 // RUN:   %s | FileCheck %s
+
+// Force recompile v2
 
 import chisel3._
 import circt.stage.ChiselStage
