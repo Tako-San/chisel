@@ -1,407 +1,128 @@
 package chisel3.internal.plugin
 
+import scala.annotation.tailrec
 import scala.tools.nsc
 import scala.tools.nsc.{Global, Phase}
-import scala.tools.nsc.plugins.{Plugin, PluginComponent}
-import scala.tools.nsc.transform.{Transform, TypingTransformers}
+import scala.tools.nsc.plugins.PluginComponent
+import scala.tools.nsc.transform.{TypingTransformers, Transform}
 
-/** Compiler plugin component injecting debug intrinsics for Chisel signals.
- *
- * Strategy: Flat injection instead of wrapping ValDef RHS in blocks,
- * we insert `DebugIntrinsic.emit(...)` calls as separate statements
- * immediately after each qualifying ValDef.
- *
- * This avoids DelayedInit/App issues where block-wrapped vals break
- * symbol ownership tracking in later compiler phases.
- *
- * @see https://github.com/scala/bug/issues/11630 (DelayedInit regression)
- * @see https://github.com/chipsalliance/chisel/issues/4015 (Tywaves debug info)
- */
-class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends PluginComponent with Transform with TypingTransformers {
+class ComponentDebugIntrinsics(plugin: ChiselPlugin, val global: Global) extends PluginComponent with TypingTransformers with Transform {
   import global._
 
-  val runsAfter = List("typer")
-  override val runsBefore = List("patmat") // Run before pattern matching to avoid AST
-  val phaseName = "componentDebugIntrinsics"
+  val phaseName: String = "componentDebugIntrinsics"
+  val runsAfter: List[String] = List("typer")
+  override val runsRightAfter: Option[String] = Some("typer")
 
-  def newTransformer(unit: CompilationUnit): Transformer =
-    new InjectionTransformer(unit)
+  def newTransformer(unit: CompilationUnit): Transformer = new DebugIntrinsicsTransformer(unit)
 
-  /** Main transformer implementing flat injection strategy */
-  class InjectionTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
+  class DebugIntrinsicsTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
+    // Tests are crucial for verification, do not skip them!
+    val shouldSkip = false
 
-    // Cached symbols for performance
-    private lazy val emitMethod: Symbol = {
-      val intrinsicPkg = rootMirror.getPackageIfDefined("chisel3.debuginternal")
-      if (intrinsicPkg == NoSymbol) {
-        if (settings.debug.value || plugin.addDebugIntrinsics) {
-          reporter.warning(NoPosition, "chisel3.debuginternal package not found - debug intrinsics disabled")
-        }
-        NoSymbol
-      } else {
-        val intrinsicObj = intrinsicPkg.info.member(TermName("DebugIntrinsic"))
-        if (intrinsicObj == NoSymbol) {
-          if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(NoPosition, "DebugIntrinsic object not found in chisel3.debuginternal")
-          }
-          NoSymbol
-        } else {
-          intrinsicObj.info.member(TermName("emit"))
-        }
+    def isPluginEnabled: Boolean = plugin.addDebugIntrinsics
+
+    override def transform(tree: Tree): Tree = {
+      if (shouldSkip || !isPluginEnabled) {
+        return super.transform(tree)
       }
-    }
 
-    private lazy val chiselDataClass: Symbol = {
-      val sym = rootMirror.getClassIfDefined("chisel3.Data")
-      if (sym == NoSymbol && (settings.debug.value || plugin.addDebugIntrinsics)) {
-        reporter.warning(NoPosition, "chisel3.Data not found")
-      }
-      sym
-    }
-
-    private lazy val chiselBundleClass: Symbol =
-      rootMirror.getClassIfDefined("chisel3.Bundle")
-
-    private lazy val chiselModuleClass: Symbol =
-      rootMirror.getClassIfDefined("chisel3.experimental.BaseModule")
-
-    /** Check if symbol represents Chisel Data type */
-    private def isChiselData(sym: Symbol): Boolean = {
-      if (sym == NoSymbol || sym.info == NoType) return false
-      if (chiselDataClass == NoSymbol) return false
-      sym.info.baseClasses.contains(chiselDataClass)
-    }
-
-    /** Check if type represents Chisel Data */
-    private def isChiselType(tpe: Type): Boolean = {
-      if (tpe == NoType) return false
-      if (chiselDataClass == NoSymbol) return false
-      tpe.baseClasses.contains(chiselDataClass)
-    }
-
-    /** Check if owner is a Module or Bundle */
-    private def isChiselComponent(owner: Symbol): Boolean = {
-      if (owner == NoSymbol) return false
-      
-      val isModule = if (chiselModuleClass != NoSymbol) {
-        owner.baseClasses.contains(chiselModuleClass)
-      } else {
-        false
-      }
-      
-      val isBundle = if (chiselBundleClass != NoSymbol) {
-        owner.baseClasses.contains(chiselBundleClass)
-      } else {
-        false
-      }
-      
-      isModule || isBundle
-    }
-
-    /** Helper to dump AST tree structure for debugging */
-    private def dumpTree(tree: Tree, indent: Int = 0): String = {
-      val prefix = "  " * indent
       tree match {
-        case Apply(fun, args) =>
-          s"${prefix}Apply(\n${dumpTree(fun, indent + 1)},\n${prefix}  args=[${args.map(a => dumpTree(a, indent + 2)).mkString(", ")}]\n${prefix})"
-        case TypeApply(fun, targs) =>
-          s"${prefix}TypeApply(\n${dumpTree(fun, indent + 1)},\n${prefix}  targs=[${targs.map(showRaw(_)).mkString(", ")}]\n${prefix})"
-        case Select(qual, name) =>
-          s"${prefix}Select(\n${dumpTree(qual, indent + 1)},\n${prefix}  name=${name})\n${prefix})"
-        case Ident(name) =>
-          s"${prefix}Ident(${name})"
-        case _ =>
-          s"${prefix}${tree.getClass.getSimpleName}(${showRaw(tree).take(50)}...)"
-      }
-    }
-
-    /** Extract binding type from ValDef (Wire, Reg, Input, Output, IO) */
-    private def extractBinding(vd: ValDef): Option[String] = {
-      
-      // DIAGNOSTIC: Log the RHS tree structure
-      if (plugin.addDebugIntrinsics) {
-        reporter.warning(vd.pos, s"[DIAG-RHS] ${vd.name} RHS tree:\n${dumpTree(vd.rhs)}")
-        reporter.warning(vd.pos, s"[DIAG-RHS] ${vd.name} RHS class: ${vd.rhs.getClass.getSimpleName}")
-        reporter.warning(vd.pos, s"[DIAG-RHS] ${vd.name} RHS showRaw: ${showRaw(vd.rhs).take(200)}")
-      }
-      
-      // Extended matching logic to handle object apply calls (e.g. RegInit.apply)
-      def matchesName(tree: Tree, names: Set[String]): Boolean = tree match {
-        // Handle explicit .apply() calls on objects
-        case Select(qual, TermName("apply")) => matchesName(qual, names)
-        // Handle method calls
-        case Select(_, TermName(n)) => names.contains(n)
-        case Ident(TermName(n))     => names.contains(n)
-        case _                      => false
-      }
-
-      vd.rhs match {
-        // Wire variants: Wire(), WireInit(), WireDefault()
-        case Apply(fun, _) if matchesName(fun, Set("Wire", "WireInit", "WireDefault")) =>
-          Some("Wire")
-        case Apply(TypeApply(fun, _), _) if matchesName(fun, Set("Wire", "WireInit", "WireDefault")) =>
-          Some("Wire")
-
-        // Register variants: Reg(), RegInit(), RegNext(), RegEnable()
-        case Apply(fun, _) if matchesName(fun, Set("Reg", "RegInit", "RegNext", "RegEnable")) =>
-          Some("Reg")
-        case Apply(TypeApply(fun, _), _) if matchesName(fun, Set("Reg", "RegInit", "RegNext", "RegEnable")) =>
-          Some("Reg")
-
-        // IO wrapper - check direction (Input/Output/Flipped)
-        case Apply(fun, List(inner)) if matchesName(fun, Set("IO")) =>
-          inner match {
-            case Apply(dirFun, _) if matchesName(dirFun, Set("Input")) =>
-              Some("Input")
-            case Apply(TypeApply(dirFun, _), _) if matchesName(dirFun, Set("Input")) =>
-              Some("Input")
-            case Apply(dirFun, _) if matchesName(dirFun, Set("Output")) =>
-              Some("Output")
-            case Apply(TypeApply(dirFun, _), _) if matchesName(dirFun, Set("Output")) =>
-              Some("Output")
-            case Apply(dirFun, _) if matchesName(dirFun, Set("Flipped")) =>
-              Some("Flipped")
-            case Apply(TypeApply(dirFun, _), _) if matchesName(dirFun, Set("Flipped")) =>
-              Some("Flipped")
-            case _ => Some("IO")
+        case vd @ ValDef(mods, name, tpt, rhs) 
+          if !mods.isSynthetic && 
+             !name.toString.startsWith("debug_tmp") && 
+             !name.toString.startsWith("_probe") && 
+             rhs.nonEmpty =>
+          
+          val isChiselData = try {
+            val dataSym = rootMirror.getClassIfDefined("chisel3.Data")
+            dataSym != NoSymbol && tpt.tpe != null && tpt.tpe <:< dataSym.tpe
+          } catch {
+            case _: Throwable => false
           }
 
-        case Apply(TypeApply(fun, _), List(inner)) if matchesName(fun, Set("IO")) =>
-          inner match {
-            case Apply(dirFun, _) if matchesName(dirFun, Set("Input")) =>
-              Some("Input")
-            case Apply(TypeApply(dirFun, _), _) if matchesName(dirFun, Set("Input")) =>
-              Some("Input")
-            case Apply(dirFun, _) if matchesName(dirFun, Set("Output")) =>
-              Some("Output")
-            case Apply(TypeApply(dirFun, _), _) if matchesName(dirFun, Set("Output")) =>
-              Some("Output")
-            case Apply(dirFun, _) if matchesName(dirFun, Set("Flipped")) =>
-              Some("Flipped")
-            case Apply(TypeApply(dirFun, _), _) if matchesName(dirFun, Set("Flipped")) =>
-              Some("Flipped")
-            case _ => Some("IO")
+          if (isChiselData) {
+            val tempName = TermName(currentUnit.fresh.newName("debug_tmp"))
+            val transformedRHS = transform(rhs)
+            
+            val binding = extractBinding(rhs)
+            val sourcePath = if (tree.pos.isDefined && tree.pos.source != null) tree.pos.source.path else ""
+            val sourceLine = if (tree.pos.isDefined) tree.pos.line else 0
+            
+            // Generate emission call
+            // Fix: Use SourceLine explicitly instead of incorrectly calling macro materialize
+            // SourceLine(filename: String, line: Int, col: Int)
+            val block = q"""{ 
+              val $tempName = $transformedRHS;
+              chisel3.debuginternal.DebugIntrinsic.emit($tempName, ${name.toString}, $binding)(
+                chisel3.experimental.SourceLine($sourcePath, $sourceLine, 0)
+              );
+              $tempName 
+            }"""
+            localTyper.typed(block)
+          } else {
+            super.transform(tree)
           }
-
-        case _ => None
+        case _ => super.transform(tree)
       }
     }
 
-    /** Determine if a ValDef should be instrumented */
-    private def shouldInstrument(vd: ValDef): Boolean = {
-      val mods = vd.mods
-
-      // DIAGNOSTIC: Always log ValDef inspection
-      if (plugin.addDebugIntrinsics) {
-        reporter.warning(vd.pos, s"[DIAG] Inspecting ValDef: ${vd.name} (flags: ${mods.flags})")
-      }
-
-      // Skip constructor parameters
-      if (mods.hasFlag(Flag.PARAM)) {
-        if (plugin.addDebugIntrinsics) {
-          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: PARAM flag")
-        }
-        return false
-      }
-
-      // Skip synthetic fields, BUT allow Chisel Data types
-      if (mods.hasFlag(Flag.SYNTHETIC)) {
-        if (!isChiselData(vd.symbol)) {
-          if (plugin.addDebugIntrinsics) {
-            reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: SYNTHETIC but not Chisel Data")
-          }
-          return false
-        }
-      }
-
-      // Skip private Chisel internal fields (convention: start with '_')
-      if (vd.name.toString.startsWith("_")) {
-        if (plugin.addDebugIntrinsics) {
-          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: starts with underscore")
-        }
-        return false
-      }
-
-      // Must have valid symbol and be Chisel Data
-      val validSym = vd.symbol != NoSymbol
-      val isData = isChiselData(vd.symbol)
+    /**
+     * Recursively unwrap Chisel naming wrappers (withName, prefix) to find the actual constructor call.
+     * 
+     * Chisel wraps constructors for automatic naming:
+     *   val state = RegInit(0.U) 
+     * becomes:
+     *   Apply(withName("state"), [Apply(prefix("state"), [Apply(RegInit, ...)])])
+     * 
+     * This function strips those wrappers to access the underlying constructor.
+     */
+    @tailrec
+    private def unwrapWrappers(tree: Tree): Tree = tree match {
+      // Pattern: Apply(Apply(TypeApply(Select(..., wrapperName), ...), ...), [..., body])
+      // Matches both withName and prefix.apply patterns
+      case Apply(Apply(TypeApply(Select(_, name), _), _), args) 
+        if args.nonEmpty && (name.toString == "withName" || name.toString == "apply") =>
+        unwrapWrappers(args.last)
       
-      if (!validSym) {
-        if (plugin.addDebugIntrinsics) {
-          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: NoSymbol")
-        }
-        return false
-      }
+      // Base case: no more wrappers
+      case other => other
+    }
+
+    /**
+     * Extract binding type from RHS expression by unwrapping naming helpers
+     * and pattern matching on the actual Chisel constructor.
+     */
+    private def extractBinding(rhs: Tree): String = {
+      val unwrapped = unwrapWrappers(rhs)
       
-      if (!isData) {
-        if (plugin.addDebugIntrinsics) {
-          reporter.warning(vd.pos, s"[DIAG] ${vd.name} SKIPPED: Not Chisel Data. Symbol type: ${vd.symbol.info}, Base classes: ${vd.symbol.info.baseClasses.take(5)}")
-        }
-        return false
-      }
-
-      if (plugin.addDebugIntrinsics) {
-        reporter.warning(vd.pos, s"[DIAG] ${vd.name} PASSED all checks!")
-      }
-      
-      true
-    }
-
-    /** Create typed DebugIntrinsic.emit call for a ValDef */
-    private def mkEmitCall(vd: ValDef, bindingType: String): Tree = {
-      if (emitMethod == NoSymbol) return EmptyTree
-
-      if (settings.debug.value || plugin.addDebugIntrinsics) {
-        reporter.warning(
-          vd.pos,
-          s"[INSTRUMENT-V2] ${vd.name} as $bindingType at ${vd.pos.source}:${vd.pos.line}"
-        )
-      }
-
-      val emitCall = Apply(
-        Select(
-          Select(
-            Select(Ident(TermName("chisel3")), TermName("debuginternal")),
-            TermName("DebugIntrinsic")
-          ),
-          TermName("emit")
-        ),
-        List(
-          Ident(vd.symbol),
-          Literal(Constant(vd.name.toString)),
-          Literal(Constant(bindingType))
-        )
-      )
-
-      localTyper.typed(emitCall)
-    }
-
-    /** Inject emit calls into list of statements (flat strategy). */
-    private def injectIntoStats(stats: List[Tree]): List[Tree] = {
-      // DIAGNOSTIC: Log stats inspection
-      if (plugin.addDebugIntrinsics) {
-        reporter.warning(NoPosition, s"[DIAG] injectIntoStats called with ${stats.length} statements")
-        stats.foreach {
-          case vd: ValDef => reporter.warning(vd.pos, s"[DIAG] - Found ValDef: ${vd.name}")
-          case other => reporter.warning(other.pos, s"[DIAG] - Found: ${other.getClass.getSimpleName}")
-        }
-      }
-
-      stats.flatMap { stat =>
-        stat match {
-          case vd @ ValDef(mods, name, tpt, rhs) if shouldInstrument(vd) =>
-            extractBinding(vd) match {
-              case Some(binding) =>
-                val emitCall = mkEmitCall(vd, binding)
-                if (emitCall != EmptyTree) {
-                  List(vd, emitCall)
-                } else {
-                  List(vd)
-                }
-              case None =>
-                if (plugin.addDebugIntrinsics) {
-                  reporter.warning(vd.pos, s"[DIAG] ${vd.name} passed shouldInstrument but no binding found")
-                }
-                List(vd)
-            }
-          case other =>
-            List(other)
-        }
-      }
-    }
-
-    /** Main transformation entry point with explicit recursion control */
-    override def transform(tree: Tree): Tree = tree match {
-      // Handle class/object bodies (Template)
-      case tmpl @ Template(parents, self, body) =>
-        if (settings.debug.value || plugin.addDebugIntrinsics) {
-          reporter.warning(tmpl.pos, s"[DEBUG-TEMPLATE-V2] Visiting template of ${currentOwner.name} with ${body.length} statements")
-          reporter.warning(tmpl.pos, s"[DIAG] currentOwner=${currentOwner.name}, isChiselComponent=${isChiselComponent(currentOwner)}")
-        }
+      unwrapped match {
+        // RegInit, RegNext, Reg
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("RegInit" | "RegNext" | "Reg")), _), _), _), _) => 
+          "RegBinding"
         
-        // Only process templates of Chisel components
-        val shouldProcess = isChiselComponent(currentOwner)
+        // Wire, WireDefault, WireInit
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Wire" | "WireDefault" | "WireInit")), _), _), _), _) => 
+          "WireBinding"
         
-        if (plugin.addDebugIntrinsics) {
-          reporter.warning(tmpl.pos, s"[DIAG] shouldProcess=${shouldProcess}")
-        }
+        // Input
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Input")), _), _), _) => 
+          "PortBinding(INPUT)"
         
-        if (shouldProcess) {
-          val injected = injectIntoStats(body)
-          val transformed = injected.map(transform)
-
-          val newTmpl =
-            treeCopy.Template(tmpl, parents.map(transform), transform(self).asInstanceOf[ValDef], transformed)
-          localTyper.typedPos(tmpl.pos)(newTmpl)
-        } else {
-          super.transform(tmpl)
-        }
-
-      // Handle method bodies and local blocks
-      case blk @ Block(stats, expr) =>
-        if (plugin.addDebugIntrinsics) {
-          reporter.warning(blk.pos, s"[DIAG] Processing Block with ${stats.length} stats")
-        }
-        val injected = injectIntoStats(stats)
-        val transformed = injected.map(transform)
-
-        val newBlk = treeCopy.Block(blk, transformed, transform(expr))
-        localTyper.typedPos(blk.pos)(newBlk)
-
-      // Handle lazy val (DefDef with LAZY flag)
-      case dd @ DefDef(mods, name, tparams, vparamss, tpt, rhs) if mods.hasFlag(Flag.LAZY) =>
-
-        // Check return type of the method (not the method itself)
-        val resultType = dd.symbol.info.resultType
-        val isChiselResult = isChiselType(resultType)
-
-        if (isChiselResult) {
-          if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(
-              dd.pos,
-              s"[INSTRUMENT-V2] lazy val ${dd.name} with result type $resultType"
-            )
-          }
-
-          val newRhs = rhs match {
-            case Block(stats, expr) =>
-              val injected = injectIntoStats(stats)
-              val transformed = injected.map(transform)
-              treeCopy.Block(rhs, transformed, transform(expr))
-            case other => transform(other)
-          }
-          treeCopy.DefDef(dd, mods, name, tparams, vparamss, tpt, newRhs)
-        } else {
-          super.transform(dd)
-        }
-
-      // Handle Bundle AND Module constructors
-      case dd @ DefDef(mods, nme.CONSTRUCTOR, tparams, vparamss, tpt, rhs) =>
-        val ownerClass = currentOwner
-        val isComponent = isChiselComponent(ownerClass)
-
-        if (isComponent) {
-          if (settings.debug.value || plugin.addDebugIntrinsics) {
-            reporter.warning(
-              dd.pos,
-              s"[INSTRUMENT-V2] Component constructor in ${ownerClass.name}"
-            )
-          }
-
-          val newRhs = rhs match {
-            case Block(stats, expr) =>
-              val injected = injectIntoStats(stats)
-              val transformed = injected.map(transform)
-              treeCopy.Block(rhs, transformed, transform(expr))
-            case other => transform(other)
-          }
-          treeCopy.DefDef(dd, mods, nme.CONSTRUCTOR, tparams, vparamss, tpt, newRhs)
-        } else {
-          super.transform(dd)
-        }
-
-      case _ =>
-        super.transform(tree)
+        // Output
+        case Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Output")), _), _), _) => 
+          "PortBinding(OUTPUT)"
+        
+        // IO (contains ports)
+        case Apply(Apply(TypeApply(Select(_, TermName("IO")), _), _), _) => 
+          "PortBinding"
+        
+        // Mem
+        case Apply(Apply(TypeApply(Select(Select(Ident(TermName("chisel3")), TermName("Mem")), _), _), _), _) => 
+          "MemBinding"
+        
+        // Fallback for unknown Data constructs
+        case _ => "WireBinding"
+      }
     }
   }
 }
