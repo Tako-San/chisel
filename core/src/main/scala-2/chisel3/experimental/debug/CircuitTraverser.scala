@@ -305,23 +305,28 @@ object CircuitTraverser {
                       case _: Throwable => memberName // Fallback to field name
                     }
 
-                  // Try to get memory type using cloneType
+                  // Determine inner type from the memory's element type (t) if possible, otherwise fallback to cloneType
                   val innerType: Option[String] = try {
-                    val mirror = scala.reflect.runtime.universe.runtimeMirror(getClass.getClassLoader)
-                    val instanceMirror2 = mirror.reflect(value)
-                    val cloneTypeMethod = instanceMirror2.symbol.typeSignature.member(TermName("cloneType"))
-                    if (cloneTypeMethod != NoSymbol) {
-                      val cloneTypeResult = instanceMirror2.reflectMethod(cloneTypeMethod.asMethod).apply()
-                      if (cloneTypeResult.isInstanceOf[Data]) {
-                        Some(dataTypeName(cloneTypeResult.asInstanceOf[Data]))
-                      } else {
-                        None
-                      }
-                    } else {
-                      None
-                    }
+                    // Attempt to access the "t" field which holds the element Data type for MemBase
+                    val tMethod = value.getClass.getMethod("t")
+                    val innerData = tMethod.invoke(value).asInstanceOf[chisel3.Data]
+                    Some(dataTypeName(innerData))
                   } catch {
-                    case _: Throwable => None
+                    case _: Throwable =>
+                      // Fallback to cloneType approach (for compatibility)
+                      try {
+                        val mirror = scala.reflect.runtime.universe.runtimeMirror(getClass.getClassLoader)
+                        val instanceMirror2 = mirror.reflect(value)
+                        val cloneTypeMethod = instanceMirror2.symbol.typeSignature.member(TermName("cloneType"))
+                        if (cloneTypeMethod != NoSymbol) {
+                          val cloneTypeResult = instanceMirror2.reflectMethod(cloneTypeMethod.asMethod).apply()
+                          if (cloneTypeResult.isInstanceOf[Data]) {
+                            Some(dataTypeName(cloneTypeResult.asInstanceOf[Data]))
+                          } else None
+                        } else None
+                      } catch {
+                        case _: Throwable => None
+                      }
                   }
 
                   // Try to extract depth from memory size option
@@ -351,36 +356,31 @@ object CircuitTraverser {
                   )
 
                   // Now annotate memory fields (for Bundle types)
-                  innerType.foreach { _ =>
-                    // Try to get the Data type to extract fields
+                  innerType.foreach { typeName =>
+                    // Try to get the Data type to extract fields using the same 't' field approach
                     try {
-                      val mirror = scala.reflect.runtime.universe.runtimeMirror(getClass.getClassLoader)
-                      val instanceMirror2 = mirror.reflect(value)
-                      val cloneTypeMethod = instanceMirror2.symbol.typeSignature.member(TermName("cloneType"))
-                      if (cloneTypeMethod != NoSymbol) {
-                        val cloneTypeResult = instanceMirror2.reflectMethod(cloneTypeMethod.asMethod).apply()
-                        if (cloneTypeResult.isInstanceOf[Data]) {
-                          val innerData = cloneTypeResult.asInstanceOf[Data].cloneType
-                          innerData match {
-                            case record: Record =>
-                              record.elements.foreach { case (fieldName, elem) =>
-                                if (!shouldAnnotate(s"${memTarget}_field_$fieldName")) {
-                                  return
-                                }
-                                implicit val info: SourceInfo = SourceInfo.materializeFromStacktrace
-                                Builder.pushCommand(
-                                  DefIntrinsic(
-                                    info,
-                                    "chisel.debug.memory_field",
-                                    Seq(Node(memId)),
-                                    Seq("parent" -> memTarget, "field" -> fieldName, "type" -> dataTypeName(elem))
-                                  )
-                                )
-                              }
-                            case _ =>
-                            // Not a bundle, skip field annotations
+                      // Reuse the innerData obtained from the 't' field above (lines 311-313)
+                      val tMethod = value.getClass.getMethod("t")
+                      val innerData = tMethod.invoke(value).asInstanceOf[chisel3.Data]
+                      
+                      val innerDataClone = innerData.cloneType
+                      
+                      innerDataClone match {
+                        case record: Record =>
+                          record.elements.foreach { case (fieldName, elem) =>
+                            implicit val info: SourceInfo = SourceInfo.materializeFromStacktrace
+                            Builder.pushCommand(
+                              DefIntrinsic(
+                                info,
+                                "chisel.debug.memory_field",
+                                Seq(Node(memId)),
+                                Seq("parent" -> memTarget, "field" -> fieldName, "type" -> dataTypeName(elem))
+                              )
+                            )
                           }
-                        }
+                        case _ =>
+                          System.err.println(s"[CircuitTraverser DEBUG]   - innerData is NOT a Record/Bundle, skipping field annotations")
+                          // Not a bundle, skip field annotations
                       }
                     } catch {
                       case _: Throwable =>
