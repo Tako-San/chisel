@@ -7,7 +7,11 @@ import scala.reflect.runtime.universe._
 import scala.reflect.ClassTag
 
 package object debug {
-  
+
+  def captureCircuit[M <: RawModule](module: M): Unit = {
+    CircuitTraverser.captureCircuit(module)
+  }
+
   /**
    * Прикрепляет отладочную информацию к сигналу Data.
    * Генерирует Intrinsic-вызов в FIRRTL.
@@ -15,16 +19,13 @@ package object debug {
   def attachSourceInfo[T <: Data](target: T)(implicit sourceInfo: SourceInfo): Unit = {
     // 1. Извлекаем данные из ReflectionExtractor
     val info = ReflectionExtractor.extract(target)
-    
+
     // 2. Сериализуем в строку (формат: "key=value,key2=value2")
     val serialized = info.fields.map(f => s"${f.name}=${f.value}").mkString(",")
 
     // 3. Создаем Intrinsic
     // "chisel.debug.source_info" — уникальное имя интринсика
-    Intrinsic("chisel.debug.source_info",
-      "scala_class" -> info.className,
-      "fields" -> serialized
-    )(target)
+    Intrinsic("chisel.debug.source_info", "scala_class" -> info.className, "fields" -> serialized)(target)
   }
 
   /**
@@ -38,16 +39,18 @@ package object debug {
     val mirror = runtimeMirror(getClass.getClassLoader)
     val instanceMirror = mirror.reflect(module)(ct)
     val tpe = instanceMirror.symbol.typeSignature
-    
+
     // Ищем все публичные геттеры, vals и def-методы без параметров
     // Сначала собираем все кандидатов, а затем фильтруем
     val allCandidates = tpe.members.flatMap { member =>
       val memberName = member.name.toString
-      
+
       // Пропускаем private/internal/generated members и системные поля
-      if (memberName.startsWith("_") || memberName.contains("$") ||
-          memberName == "impl" || memberName == "_module" ||
-          memberName == "implicitClock" || memberName == "implicitReset") {
+      if (
+        memberName.startsWith("_") || memberName.contains("$") ||
+        memberName == "impl" || memberName == "_module" ||
+        memberName == "implicitClock" || memberName == "implicitReset"
+      ) {
         None
       } else {
         member match {
@@ -61,7 +64,7 @@ package object debug {
         }
       }
     }.toList
-    
+
     // Фильтруем кандидатов по типу возврата
     val members = allCandidates.filter { member =>
       member match {
@@ -71,15 +74,15 @@ package object debug {
           t.info <:< typeOf[Data] || isDataLike(t.info)
       }
     }
-    
+
     members.foreach { member =>
       try {
         val term = member match {
           case m: MethodSymbol => m.asTerm
-          case t: TermSymbol => t
+          case t: TermSymbol   => t
           case _ => member.asTerm
         }
-        
+
         // Сначала пробуем как поле val
         if (member.isTerm && member.isVal && !member.isMethod) {
           try {
@@ -87,9 +90,7 @@ package object debug {
             val value = fieldMirror.get
             if (value.isInstanceOf[Data]) {
               val data = value.asInstanceOf[Data]
-              Intrinsic("chisel.debug.source_info",
-                "field_name" -> member.name.toString.trim
-              )(data)
+              Intrinsic("chisel.debug.source_info", "field_name" -> member.name.toString.trim)(data)
             }
           } catch {
             case _: Throwable =>
@@ -104,9 +105,7 @@ package object debug {
               val value = instanceMirror.reflectField(term).get
               if (value.isInstanceOf[Data]) {
                 val data = value.asInstanceOf[Data]
-                Intrinsic("chisel.debug.source_info",
-                  "field_name" -> member.name.toString.trim
-                )(data)
+                Intrinsic("chisel.debug.source_info", "field_name" -> member.name.toString.trim)(data)
               }
             } catch {
               case _: Throwable =>
@@ -123,9 +122,7 @@ package object debug {
             val value = instanceMirror.reflectField(term).get
             if (value.isInstanceOf[Data]) {
               val data = value.asInstanceOf[Data]
-              Intrinsic("chisel.debug.source_info",
-                "field_name" -> member.name.toString.trim
-              )(data)
+              Intrinsic("chisel.debug.source_info", "field_name" -> member.name.toString.trim)(data)
             }
           } catch {
             case _: Throwable =>
@@ -138,28 +135,28 @@ package object debug {
       }
     }
   }
-  
-  private def tryInvokeMethod(member: Symbol, instanceMirror: InstanceMirror, term: TermSymbol)(implicit sourceInfo: SourceInfo): Unit = {
+
+  private def tryInvokeMethod(member: Symbol, instanceMirror: InstanceMirror, term: TermSymbol)(
+    implicit sourceInfo: SourceInfo
+  ): Unit = {
     try {
       val methodMirror = instanceMirror.reflectMethod(term.asMethod)
       val value = methodMirror.apply()
       if (value.isInstanceOf[Data]) {
         val data = value.asInstanceOf[Data]
-        Intrinsic("chisel.debug.source_info",
-          "field_name" -> member.name.toString.trim
-        )(data)
+        Intrinsic("chisel.debug.source_info", "field_name" -> member.name.toString.trim)(data)
       }
     } catch {
       case _: Throwable =>
     }
   }
-  
+
   /**
    * Проверяет, является ли тип Data или похожим на него.
    * Нужна потому что иногда типы могут быть подтипами Data или иметь похожее имя.
    */
   private def isDataLike(tpe: Type): Boolean = {
-    tpe.typeSymbol.fullName.startsWith("chisel3.Data") || 
+    tpe.typeSymbol.fullName.startsWith("chisel3.Data") ||
     tpe.typeSymbol.fullName.startsWith("chisel3.") ||
     tpe.toString.contains("Wire") ||
     tpe.toString.contains("UInt") ||

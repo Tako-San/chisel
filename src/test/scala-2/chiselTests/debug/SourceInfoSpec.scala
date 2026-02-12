@@ -22,14 +22,14 @@ class SourceInfoSpec extends AnyFlatSpec with Matchers {
   it should "extract simple class parameters" in {
     class MyConfig(val width: Int, val name: String)
     val cfg = new MyConfig(42, "UnitA")
-    
+
     val info = chisel3.experimental.debug.ReflectionExtractor.extract(cfg)
-    
+
     info.className should include("MyConfig")
-    
+
     val widthField = info.fields.find(_.name == "width").get
     widthField.value should be("42")
-    
+
     val nameField = info.fields.find(_.name == "name").get
     nameField.value should be("UnitA")
   }
@@ -37,14 +37,14 @@ class SourceInfoSpec extends AnyFlatSpec with Matchers {
   it should "emit intrinsic in FIRRTL" in {
     class DebugModule extends RawModule {
       val wire = Wire(new MyBundle(8))
-      
+
       // ВРУЧНУЮ вызываем нашу функцию
       chisel3.experimental.debug.attachSourceInfo(wire)
     }
 
     val chirrtl = ChiselStage.emitCHIRRTL(new DebugModule)
     println(chirrtl)
-    
+
     // FIRRLT format for intrinsic: intrinsic(name<params>, args)
     chirrtl should include("intrinsic(chisel.debug.source_info")
     chirrtl should include("scala_class = \"MyBundle\"")
@@ -54,48 +54,51 @@ class SourceInfoSpec extends AnyFlatSpec with Matchers {
   it should "automatically capture module fields" in {
     class AutoDebugModule extends Module {
       val io = IO(new Bundle { val out = Output(UInt(8.W)) })
-      
+
       class Inner(val id: Int) extends Bundle
       val myComplexWire = Wire(new Inner(123))
-      
+
       // Вызов строго в конце! (без TypeTag)
       chisel3.experimental.debug.captureParams(this)
     }
-    
+
     val chirrtl = ChiselStage.emitCHIRRTL(new AutoDebugModule)
     println(chirrtl)
-    
+
     chirrtl should include("field_name = \"myComplexWire\"")
   }
 
   it should "extract nested case class parameters with deep serialization" in {
     case class InnerConfig(x: Int, flag: Boolean)
     case class OuterConfig(name: String, inner: InnerConfig, items: Seq[Int])
-    
+
     val cfg = OuterConfig("TestModule", InnerConfig(42, true), Seq(1, 2, 3))
-    
+
     val info = chisel3.experimental.debug.ReflectionExtractor.extract(cfg)
-    
+
     info.className should include("OuterConfig")
-    
+
     val nameField = info.fields.find(_.name == "name").get
     nameField.value shouldBe "\"TestModule\""
-    
+
     val innerField = info.fields.find(_.name == "inner").get
     innerField.value shouldBe "{\"x\": 42, \"flag\": true}"
-    
+
     val itemsField = info.fields.find(_.name == "items").get
     itemsField.value shouldBe "[1, 2, 3]"
   }
 
   it should "handle edge cases in serialization (Nulls, Chisel Types, Empty Seqs)" in {
     case class EdgeCaseConfig(
-      nullable: String,
+      nullable:  String,
       emptyList: Seq[Int],
-      hasBoolean: Boolean
+      hwRef:     Data // <-- Проверяем, что сериализатор не давится железом
     )
 
-    val cfg = EdgeCaseConfig(null, Seq(), true)
+    // Создаем простой UInt, чтобы не зависеть от контекста модуля
+    val fakeWire = UInt(8.W)
+
+    val cfg = EdgeCaseConfig(null, Seq(), fakeWire)
 
     val info = chisel3.experimental.debug.ReflectionExtractor.extract(cfg)
 
@@ -105,8 +108,9 @@ class SourceInfoSpec extends AnyFlatSpec with Matchers {
     val listField = info.fields.find(_.name == "emptyList").get
     listField.value shouldBe "[]"
 
-    val boolField = info.fields.find(_.name == "hasBoolean").get
-    boolField.value shouldBe "true"
+    val hwField = info.fields.find(_.name == "hwRef").get
+    // Ожидаем, что он просто сохранил это как строку, а не упал
+    hwField.value should include("UInt")
   }
 
   it should "capture different field types (def, lazy val, val)" in {
@@ -119,7 +123,7 @@ class SourceInfoSpec extends AnyFlatSpec with Matchers {
     }
 
     val chirrtl = ChiselStage.emitCHIRRTL(new CaptureTypesModule)
-    
+
     chirrtl should include("field_name = \"regularVal\"")
     chirrtl should include("field_name = \"dynamicProp\"")
     chirrtl should include("field_name = \"lazyProp\"")
