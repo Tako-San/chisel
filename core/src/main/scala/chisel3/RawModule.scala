@@ -165,6 +165,14 @@ abstract class RawModule extends BaseModule {
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
 
+    if (Builder.isDebugCaptureEnabled && !name.startsWith("_$$")) {
+      try {
+        chisel3.experimental.debug.DebugCapture.captureCircuit(this)
+      } catch {
+        case _: Throwable =>
+      }
+    }
+
     _closed = true
 
     // Check to make sure that all ports can be named
