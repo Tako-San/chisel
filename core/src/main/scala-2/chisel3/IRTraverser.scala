@@ -90,51 +90,35 @@ object IRTraverser {
       // This is a Module - get the parent container (which is the elaborating module)
       Builder.currentModule match {
         case Some(parent: RawModule) =>
-          println(s"[IRTraverser] Found parent container: ${parent.name}")
           // Get parent's _body
           val parentMirror = mirror.reflect(parent.asInstanceOf[AnyRef])
           val parentBodySym = parentMirror.symbol.typeSignature.member(TermName("_body"))
           if (parentBodySym.isTerm) {
             val parentBody = parentMirror.reflectField(parentBodySym.asTerm).get
-            println(s"[IRTraverser] Parent body: $parentBody")
             parentBody
           } else {
-            println(s"[IRTraverser] ERROR: parent doesn't have _body field")
             return
           }
         case _ =>
-          println(s"[IRTraverser] ERROR: no parent container found")
           return
       }
     }
 
     if (targetBlock == null) {
-      println(s"[IRTraverser] ERROR: targetBlock is null")
       return
     }
-
-    println(s"[IRTraverser] targetBlock class: ${targetBlock.getClass.getSimpleName}")
 
     // Call addSecretCommand on the Block
     val bodyMirror = mirror.reflect(targetBlock)
     val addSecretMethodSym = bodyMirror.symbol.typeSignature.member(TermName("addSecretCommand"))
     if (addSecretMethodSym == NoSymbol) {
-      println(s"[IRTraverser] ERROR: addSecretCommand method is NoSymbol")
       return
     }
     if (!addSecretMethodSym.isMethod) {
-      println(s"[IRTraverser] ERROR: addSecretCommand is not a method")
       return
     }
     val addSecretMethodSymbol = addSecretMethodSym.asMethod
 
     bodyMirror.reflectMethod(addSecretMethodSymbol).apply(cmd)
-    println(s"[IRTraverser] Successfully added intrinsic command to module ${module.name}")
-
-    // Get the toString of the Block to see if it has the command
-    val blockStr = targetBlock.toString
-    if (blockStr.contains("DefIntrinsic")) {
-      println(s"[IRTraverser] Added intrinsic to module ${module.name}, block: $blockStr")
-    }
   }
 }
