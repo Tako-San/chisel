@@ -11,9 +11,9 @@ class DeepCaptureTest extends AnyFlatSpec with Matchers {
     class TestModule extends Module {
       val io = IO(new Bundle { val out = Output(UInt(8.W)) })
 
-      // Метод создает провода, которые НЕ являются полями класса
+      // Method creates wires that are NOT class fields
       def createLogic(): UInt = {
-        val internalWire = Wire(UInt(8.W)) // Локальная переменная
+        val internalWire = Wire(UInt(8.W)) // Local variable
         internalWire := 42.U
         internalWire
       }
@@ -21,15 +21,15 @@ class DeepCaptureTest extends AnyFlatSpec with Matchers {
       io.out := createLogic()
     }
 
-    // Компиляция с флагом отладки
+    // Compile with debug flag
     val chirrtl = ChiselStage.emitCHIRRTL(
       new TestModule,
       Array("--capture-debug", "true")
     )
 
-    // Проверка
-    // Оригинальная версия (Reflection) НЕ найдет "internalWire", так как это не поле класса
-    // Новая версия (IR Traversal) найдет его, так как это DefWire в списке команд
+    // Verification
+    // Original version (Reflection) will NOT find "internalWire" as it is not a class field
+    // New version (IR Traversal) will find it, as it is a DefWire in the command list
     chirrtl should include("intrinsic(chisel.debug.source_info")
     chirrtl should include("field_name = \"internalWire\"")
   }

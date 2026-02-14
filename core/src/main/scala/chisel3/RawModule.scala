@@ -2,6 +2,7 @@
 
 package chisel3
 
+import logger.LazyLogging
 import scala.util.Try
 import chisel3.experimental.{BaseModule, OpaqueType, SourceInfo, UnlocatableSourceInfo}
 import chisel3.internal._
@@ -20,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
   * This abstract base class is a user-defined module which does not include implicit clock and reset and supports
   * multiple IO() declarations.
   */
-abstract class RawModule extends BaseModule {
+abstract class RawModule extends BaseModule with LazyLogging {
 
   /** Hook to invoke hardware generators after a Module has been constructed and closed.
     *
@@ -189,7 +190,7 @@ abstract class RawModule extends BaseModule {
         chisel3.experimental.debug.DebugCapture.captureCircuit(this)
       } catch {
         case e: Throwable =>
-          e.printStackTrace()
+          logger.warn(s"Failed to capture debug info: ${e.getMessage}")
       }
     }
 

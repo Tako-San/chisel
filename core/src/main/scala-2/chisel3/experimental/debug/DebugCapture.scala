@@ -43,7 +43,6 @@ object DebugCapture extends LazyLogging {
     } catch {
       case e @ scala.util.control.NonFatal(_) =>
         logger.warn(s"Error capturing debug info for module ${module.name}: ${e.getMessage}")
-        e.printStackTrace()
     }
   }
 
@@ -105,7 +104,6 @@ object DebugCapture extends LazyLogging {
       } catch {
         case e @ scala.util.control.NonFatal(_) =>
           logger.warn(s"Error processing IO port for module ${module.name}: ${e.getMessage}")
-          e.printStackTrace()
       }
     }
   }
@@ -534,7 +532,6 @@ object DebugCapture extends LazyLogging {
     } catch {
       case e @ scala.util.control.NonFatal(_) =>
         logger.warn(s"Error annotating memory ${cmd.id.instanceName}: ${e.getMessage}")
-        e.printStackTrace()
     }
   }
 
@@ -563,7 +560,6 @@ object DebugCapture extends LazyLogging {
     } catch {
       case e @ scala.util.control.NonFatal(_) =>
         logger.warn(s"Error annotating seq memory ${cmd.id.instanceName}: ${e.getMessage}")
-        e.printStackTrace()
     }
   }
 
