@@ -6,6 +6,7 @@ import chisel3.experimental.fromStringToStringParam
 import chisel3.{Mem, MemBase, SyncReadMem}
 import chisel3.internal.Builder
 import chisel3.internal.firrtl.ir._
+import chisel3.util.debug.TypeReflector
 import logger.LazyLogging
 import scala.collection.mutable
 import scala.reflect.runtime.universe._
@@ -131,8 +132,17 @@ object DebugCapture extends LazyLogging {
             generateIntrinsic(data, name, kind)
         }
       case record: Record if record.elements.nonEmpty =>
-        record.elements.foreach { case (fieldName, fieldData) =>
-          annotateDataRecursive(fieldData, s"$name.$fieldName", kind, visited, currentDepth + 1)
+        visited.get(data) match {
+          case Some(existingName) =>
+            annotateAlias(data, name, existingName)
+          case None =>
+            visited(data) = name
+            // Generate intrinsic for the Bundle/Record itself
+            generateIntrinsic(data, name, kind)
+            // Then recursively annotate its fields
+            record.elements.foreach { case (fieldName, fieldData) =>
+              annotateDataRecursive(fieldData, s"$name.$fieldName", kind, visited, currentDepth + 1)
+            }
         }
       case vec: Vec[_] =>
         vec.zipWithIndex.take(MaxVectorCaptureSize).foreach { case (element, index) =>
@@ -166,7 +176,27 @@ object DebugCapture extends LazyLogging {
           case ActualDirection.Output => "OUTPUT"
           case _                      => "UNKNOWN"
         }
-        Intrinsic(DebugIntrinsics.PortInfo, "name" -> name, "direction" -> direction, "type" -> typeName)(data)
+
+        // Get constructor parameters for Record/Bundle types
+        val constructorParams: String = if (TypeReflector.shouldReflect(data)) {
+          val params = TypeReflector.getConstructorParams(data)
+          params
+            .map(p => s"""{"name": "${p.name}", "type": "${p.typeName}", "value": "${p.value}"}""")
+            .mkString("[", ",", "]")
+        } else "[]"
+
+        val scalaClass = if (TypeReflector.shouldReflect(data)) {
+          data.getClass.getSimpleName
+        } else ""
+
+        Intrinsic(
+          DebugIntrinsics.PortInfo,
+          "name" -> name,
+          "direction" -> direction,
+          "type" -> typeName,
+          "scalaClass" -> scalaClass,
+          "constructorParams" -> constructorParams
+        )(data)
       } else {
         Intrinsic(DebugIntrinsics.SourceInfo, "field_name" -> name, "type" -> typeName)(data)
       }

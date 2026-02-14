@@ -10,8 +10,8 @@ class MyDesign extends Module {
     val in = Input(UInt(8.W))
     val out = Output(UInt(8.W))
   })
-  // CHECK: intrinsic(chisel.debug.port_info<name = "io.out", direction = "OUTPUT", type = "UInt<8>">, io.out)
-  // CHECK: intrinsic(chisel.debug.port_info<name = "io.in", direction = "INPUT", type = "UInt<8>">, io.in)
+  // CHECK: intrinsic(chisel.debug.port_info<name = "io.out", direction = "OUTPUT", type = "UInt<8>", scalaClass = "", constructorParams = "[]">, io.out)
+  // CHECK: intrinsic(chisel.debug.port_info<name = "io.in", direction = "INPUT", type = "UInt<8>", scalaClass = "", constructorParams = "[]">, io.in)
 
   val reg = RegInit(0.U(8.W))
   // CHECK: intrinsic(chisel.debug.source_info<field_name = "reg ", type = "UInt<8>">, reg)
