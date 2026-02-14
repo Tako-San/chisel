@@ -180,9 +180,11 @@ object DebugCapture extends LazyLogging {
         // Get constructor parameters for Record/Bundle types
         val constructorParams: String = if (TypeReflector.shouldReflect(data)) {
           val params = TypeReflector.getConstructorParams(data)
-          params
-            .map(p => s"""{"name": "${p.name}", "type": "${p.typeName}", "value": "${p.value}"}""")
-            .mkString("[", ",", "]")
+          params.map { p =>
+            // Escape quotes for JSON
+            val safeValue = p.value.replace("\"", "\\\"")
+            s"""{"name": "${p.name}", "type": "${p.typeName}", "value": "$safeValue", "isComplex": ${p.isComplex}}"""
+          }.mkString("[", ",", "]")
         } else "[]"
 
         val scalaClass = if (TypeReflector.shouldReflect(data)) {
