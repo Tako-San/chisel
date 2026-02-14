@@ -1,14 +1,14 @@
-package chisel3.util.debug
+package chisel3.experimental.debug
 
 import chisel3.{Data, Element, Record, Vec}
 import scala.reflect.runtime.universe._
 
-case class ClassParam(name: String, typeName: String, value: String, isComplex: Boolean = false)
+case class ConstructorParam(name: String, typeName: String, value: String, isComplex: Boolean = false)
 
-object TypeReflector {
+object DebugTypeReflector {
   private val mirror = runtimeMirror(getClass.getClassLoader)
 
-  def getConstructorParams(target: Any): Seq[ClassParam] = {
+  def getConstructorParams(target: Any): Seq[ConstructorParam] = {
     val targetClass = target.getClass
     val classSymbol = mirror.classSymbol(targetClass)
     val instanceMirror = mirror.reflect(target)
@@ -38,7 +38,7 @@ object TypeReflector {
             case _: Throwable => ("unknown", false)
           }
 
-        Some(ClassParam(paramName, typeName, valueResult._1, valueResult._2))
+        Some(ConstructorParam(paramName, typeName, valueResult._1, valueResult._2))
       }
     }
   }

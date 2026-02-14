@@ -6,7 +6,7 @@ import chisel3.experimental.fromStringToStringParam
 import chisel3.{Mem, MemBase, SyncReadMem}
 import chisel3.internal.Builder
 import chisel3.internal.firrtl.ir._
-import chisel3.util.debug.TypeReflector
+import chisel3.experimental.debug.DebugTypeReflector
 import logger.LazyLogging
 import scala.collection.mutable
 import scala.reflect.runtime.universe._
@@ -178,8 +178,8 @@ object DebugCapture extends LazyLogging {
         }
 
         // Get constructor parameters for Record/Bundle types
-        val constructorParams: String = if (TypeReflector.shouldReflect(data)) {
-          val params = TypeReflector.getConstructorParams(data)
+        val constructorParams: String = if (DebugTypeReflector.shouldReflect(data)) {
+          val params = DebugTypeReflector.getConstructorParams(data)
           params.map { p =>
             // Escape quotes for JSON
             val safeValue = p.value.replace("\"", "\\\"")
@@ -187,7 +187,7 @@ object DebugCapture extends LazyLogging {
           }.mkString("[", ",", "]")
         } else "[]"
 
-        val scalaClass = if (TypeReflector.shouldReflect(data)) {
+        val scalaClass = if (DebugTypeReflector.shouldReflect(data)) {
           data.getClass.getSimpleName
         } else ""
 

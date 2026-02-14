@@ -1,17 +1,17 @@
 package chisel3.debug
 
 import chisel3._
-import chisel3.util.debug.TypeReflector
+import chisel3.experimental.debug.DebugTypeReflector
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 class TypeReflectorSpec extends AnyFlatSpec with Matchers {
-  "TypeReflector" should "recursively serialize nested case classes" in {
+  "DebugTypeReflector" should "recursively serialize nested case classes" in {
     case class Inner(a: Int)
     case class Outer(inner: Inner, name: String)
 
     val obj = Outer(Inner(42), "test")
-    val params = TypeReflector.getConstructorParams(obj)
+    val params = DebugTypeReflector.getConstructorParams(obj)
 
     val innerParam = params.find(_.name == "inner").get
     innerParam.value should include("a=42")
@@ -22,7 +22,7 @@ class TypeReflectorSpec extends AnyFlatSpec with Matchers {
   it should "format Seq correctly" in {
     case class Config(opts: Seq[Int])
     val obj = Config(Seq(1, 2, 3))
-    val params = TypeReflector.getConstructorParams(obj)
+    val params = DebugTypeReflector.getConstructorParams(obj)
 
     params.head.value shouldBe "Seq(1, 2, 3)"
   }
@@ -32,7 +32,7 @@ class TypeReflectorSpec extends AnyFlatSpec with Matchers {
     class InnerConfig(val cfg: OuterConfig)
 
     val obj = new InnerConfig(OuterConfig(10))
-    val params = TypeReflector.getConstructorParams(obj)
+    val params = DebugTypeReflector.getConstructorParams(obj)
 
     // Should only have cfg, not cfg$$outer or similar synthetic fields
     params.map(_.name) should not contain ("$outer")
@@ -48,7 +48,7 @@ class TypeReflectorSpec extends AnyFlatSpec with Matchers {
   it should "format basic types correctly" in {
     case class BasicTypes(a: Int, b: String, c: Boolean)
     val obj = BasicTypes(42, "hello", true)
-    val params = TypeReflector.getConstructorParams(obj)
+    val params = DebugTypeReflector.getConstructorParams(obj)
 
     params.find(_.name == "a").get.value shouldBe "42"
     params.find(_.name == "b").get.value shouldBe "\"hello\""
@@ -61,7 +61,7 @@ class TypeReflectorSpec extends AnyFlatSpec with Matchers {
     case class Level3(l2: Level2, z: Int)
 
     val obj = Level3(Level2(Level1(1), 2), 3)
-    val params = TypeReflector.getConstructorParams(obj)
+    val params = DebugTypeReflector.getConstructorParams(obj)
 
     val l2Param = params.find(_.name == "l2").get
     l2Param.isComplex shouldBe true
@@ -74,7 +74,7 @@ class TypeReflectorSpec extends AnyFlatSpec with Matchers {
 
   it should "return empty sequence for objects without constructor params" in {
     object EmptyCase
-    val params = TypeReflector.getConstructorParams(EmptyCase)
+    val params = DebugTypeReflector.getConstructorParams(EmptyCase)
     params shouldBe empty
   }
 }
