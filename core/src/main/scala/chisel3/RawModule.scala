@@ -2,6 +2,7 @@
 
 package chisel3
 
+import logger.LazyLogging
 import scala.util.Try
 import chisel3.experimental.{BaseModule, OpaqueType, SourceInfo, UnlocatableSourceInfo}
 import chisel3.internal._
@@ -20,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
   * This abstract base class is a user-defined module which does not include implicit clock and reset and supports
   * multiple IO() declarations.
   */
-abstract class RawModule extends BaseModule {
+abstract class RawModule extends BaseModule with LazyLogging {
 
   /** Hook to invoke hardware generators after a Module has been constructed and closed.
     *
@@ -165,6 +166,9 @@ abstract class RawModule extends BaseModule {
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
 
+    // No more commands.
+    _body.close()
+
     _closed = true
 
     // Check to make sure that all ports can be named
@@ -180,8 +184,15 @@ abstract class RawModule extends BaseModule {
     }
     _firrtlPorts = Some(firrtlPorts)
 
-    // No more commands.
-    _body.close()
+    // Capture debug info after module closed but before component generation
+    if (Builder.isDebugCaptureEnabled && !name.startsWith("_$$")) {
+      try {
+        chisel3.experimental.debug.DebugCapture.captureCircuit(this)
+      } catch {
+        case e: Throwable =>
+          logger.warn(s"Failed to capture debug info: ${e.getMessage}")
+      }
+    }
 
     // Generate IO invalidation commands to initialize outputs as unused,
     //  unless the client wants explicit control over their generation.

@@ -3,6 +3,7 @@
 package circt.stage
 
 import chisel3.stage.{
+  CaptureDebugInfoAnnotation,
   ChiselCircuitAnnotation,
   ChiselGeneratorAnnotation,
   ChiselOutputFileAnnotation,
@@ -56,7 +57,8 @@ trait CLI extends BareShell { this: BareShell =>
     UseSRAMBlackbox,
     IncludeInlineTestsForModule,
     IncludeInlineTestsWithName,
-    SuppressSourceInfoAnnotation
+    SuppressSourceInfoAnnotation,
+    CaptureDebugInfoAnnotation
   ).foreach(_.addOptions(parser))
 
   parser.note("CIRCT (MLIR FIRRTL Compiler) options")
