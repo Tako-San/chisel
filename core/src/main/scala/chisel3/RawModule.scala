@@ -165,13 +165,8 @@ abstract class RawModule extends BaseModule {
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
 
-    if (Builder.isDebugCaptureEnabled && !name.startsWith("_$$")) {
-      try {
-        chisel3.experimental.debug.DebugCapture.captureCircuit(this)
-      } catch {
-        case _: Throwable =>
-      }
-    }
+    // No more commands.
+    _body.close()
 
     _closed = true
 
@@ -188,8 +183,15 @@ abstract class RawModule extends BaseModule {
     }
     _firrtlPorts = Some(firrtlPorts)
 
-    // No more commands.
-    _body.close()
+    // Capture debug info after module closed but before component generation
+    if (Builder.isDebugCaptureEnabled && !name.startsWith("_$$")) {
+      try {
+        chisel3.experimental.debug.DebugCapture.captureCircuit(this)
+      } catch {
+        case e: Throwable =>
+          e.printStackTrace()
+      }
+    }
 
     // Generate IO invalidation commands to initialize outputs as unused,
     //  unless the client wants explicit control over their generation.

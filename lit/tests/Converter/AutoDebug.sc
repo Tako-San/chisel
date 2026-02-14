@@ -14,7 +14,7 @@ class MyDesign extends Module {
   // CHECK: intrinsic(chisel.debug.port_info<name = "io.in", direction = "INPUT", type = "UInt<8>", scalaClass = "", constructorParams = "[]">, io.in)
 
   val reg = RegInit(0.U(8.W))
-  // CHECK: intrinsic(chisel.debug.source_info<field_name = "reg ", type = "UInt<8>">, reg)
+  // CHECK: intrinsic(chisel.debug.source_info<field_name = "reg", type = "UInt<8>">, reg)
   reg := io.in
   io.out := reg
 }

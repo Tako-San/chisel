@@ -29,11 +29,15 @@ object DebugTypeReflector {
 
         val valueResult =
           try {
-            val termSymbol = classSymbol.toType.decl(TermName(paramName)).asTerm
-            val fieldMirror = instanceMirror.reflectField(termSymbol)
-            val rawValue = fieldMirror.get
-
-            formatValue(rawValue)
+            val declSymbol = classSymbol.toType.decl(TermName(paramName))
+            if (declSymbol == NoSymbol) {
+              ("unknown", false)
+            } else {
+              val termSymbol = declSymbol.asTerm
+              val fieldMirror = instanceMirror.reflectField(termSymbol)
+              val rawValue = fieldMirror.get
+              formatValue(rawValue)
+            }
           } catch {
             case _: Throwable => ("unknown", false)
           }
@@ -68,7 +72,13 @@ object DebugTypeReflector {
 
   private def hasConstructorParams(target: Any): Boolean = {
     val tpe = mirror.classSymbol(target.getClass).toType
-    tpe.members.exists(m => m.isMethod && m.asMethod.isPrimaryConstructor && m.asMethod.paramLists.flatten.nonEmpty)
+    tpe.members.exists { m =>
+      m.isMethod &&
+      (m match {
+        case msym: MethodSymbol => msym.isPrimaryConstructor && msym.paramLists.flatten.nonEmpty
+        case _ => false
+      })
+    }
   }
 
   def shouldReflect(target: Any): Boolean = {
