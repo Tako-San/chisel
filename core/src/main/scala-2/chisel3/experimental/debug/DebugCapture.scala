@@ -218,9 +218,7 @@ object DebugCapture extends LazyLogging {
   private def processInternalData(module: RawModule, visited: mutable.Map[Data, String]): Unit = {
     val commands = chisel3.IRTraverser.getCommands(module)
 
-    logger.info(s"Processing ${commands.size} commands for module ${module.name}")
     commands.foreach { cmd =>
-      logger.info(s"Processing command: ${cmd.getClass.getSimpleName}")
       cmd match {
         case w: DefWire =>
           // Try to get the original name from seedOpt, which contains the user-provided name
@@ -240,16 +238,13 @@ object DebugCapture extends LazyLogging {
 
         case m: DefMemory =>
           val name = m.id.seedOpt.getOrElse(m.id.instanceName)
-          logger.info(s"Processing DefMemory: name=$name, instanceName=${m.id.instanceName}")
           annotateMemoryFromIR(m, module)(UnlocatableSourceInfo)
 
         case sm: DefSeqMemory =>
           val name = sm.id.seedOpt.getOrElse(sm.id.instanceName)
-          logger.info(s"Processing DefSeqMemory: name=$name, instanceName=${sm.id.instanceName}")
           annotateSeqMemoryFromIR(sm, module)(UnlocatableSourceInfo)
 
         case _ =>
-          logger.info(s"Ignoring command: ${cmd.getClass.getSimpleName}")
         // Ignore Connect, Stop, Printf and other commands
       }
     }
@@ -400,7 +395,6 @@ object DebugCapture extends LazyLogging {
           case Some(b) =>
             b.location match {
               case Some(m: RawModule) =>
-                logger.info(s"Adding PortInfo intrinsic to module ${m.name} for data $name")
                 chisel3.IRTraverser.addIntrinsicCommand(m, intrinsicCmd)
               case _ =>
                 // Data is not bound to a module, fall back to Intrinsic.apply
@@ -513,7 +507,6 @@ object DebugCapture extends LazyLogging {
     try {
       // Try to get the user-provided name from seedOpt, otherwise use instanceName
       val name = cmd.id.seedOpt.getOrElse(cmd.id.instanceName)
-      logger.info(s"Annotating memory: name=$name, instanceName=${cmd.id.instanceName}, seedOpt=${cmd.id.seedOpt}")
 
       // Create intrinsic command directly and add it to the module
       val intrinsicCmd = DefIntrinsic(
@@ -526,9 +519,7 @@ object DebugCapture extends LazyLogging {
           "type" -> cmd.t.toString
         )
       )
-      logger.info(s"Adding memory intrinsic to module ${module.name}")
       chisel3.IRTraverser.addIntrinsicCommand(module, intrinsicCmd)
-      logger.info(s"Successfully added memory intrinsic for $name")
     } catch {
       case e @ scala.util.control.NonFatal(_) =>
         logger.warn(s"Error annotating memory ${cmd.id.instanceName}: ${e.getMessage}")
@@ -541,7 +532,6 @@ object DebugCapture extends LazyLogging {
     try {
       // Try to get the user-provided name from seedOpt, otherwise use instanceName
       val name = cmd.id.seedOpt.getOrElse(cmd.id.instanceName)
-      logger.info(s"Annotating seq memory: name=$name, instanceName=${cmd.id.instanceName}, seedOpt=${cmd.id.seedOpt}")
 
       // Create intrinsic command directly and add it to the module
       val intrinsicCmd = DefIntrinsic(
@@ -554,9 +544,7 @@ object DebugCapture extends LazyLogging {
           "type" -> cmd.t.toString
         )
       )
-      logger.info(s"Adding seq memory intrinsic to module ${module.name}")
       chisel3.IRTraverser.addIntrinsicCommand(module, intrinsicCmd)
-      logger.info(s"Successfully added seq memory intrinsic for $name")
     } catch {
       case e @ scala.util.control.NonFatal(_) =>
         logger.warn(s"Error annotating seq memory ${cmd.id.instanceName}: ${e.getMessage}")
