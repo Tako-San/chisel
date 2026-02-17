@@ -8,6 +8,7 @@ import chisel3.internal.ExceptionHelpers.ThrowableHelpers
 import chisel3.internal.{Builder, BuilderContextCache, DynamicContext, ElaborationTrace}
 import chisel3.internal.firrtl.ir
 import chisel3.stage.{
+  CaptureDebugInfoAnnotation,
   ChiselCircuitAnnotation,
   ChiselGeneratorAnnotation,
   ChiselOptions,
@@ -39,6 +40,10 @@ class Elaborate extends Phase {
     case ChiselGeneratorAnnotation(gen) =>
       val chiselOptions = view[ChiselOptions](annotations)
       val loggerOptions = view[LoggerOptions](annotations)
+      val captureDebugInfo = annotations.exists {
+        case CaptureDebugInfoAnnotation(true) => true
+        case _                                => false
+      }
       try {
         val elaborationTrace = new ElaborationTrace
         val context =
@@ -58,7 +63,8 @@ class Elaborate extends Phase {
             chiselOptions.inlineTestIncluder,
             chiselOptions.suppressSourceInfo,
             false,
-            elaborationTrace
+            elaborationTrace,
+            captureDebugInfo
           )
         val (elaboratedCircuit, dut) = {
           Builder.build(Module(gen()), context)

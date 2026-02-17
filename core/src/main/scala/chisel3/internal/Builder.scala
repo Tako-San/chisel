@@ -479,7 +479,8 @@ private[chisel3] class DynamicContext(
   val inlineTestIncluder: InlineTestIncluder,
   val suppressSourceInfo: Boolean,
   var elideLayerBlocks:   Boolean,
-  val elaborationTrace:   ElaborationTrace
+  val elaborationTrace:   ElaborationTrace,
+  val captureDebugInfo:   Boolean = false
 ) {
   val importedDefinitionAnnos = annotationSeq.collect { case a: ImportDefinitionAnnotation[_] => a }
 
@@ -567,6 +568,10 @@ private[chisel3] object Builder extends LazyLogging {
 
   // All global mutable state must be referenced via dynamicContextVar!!
   private val dynamicContextVar = new DynamicVariable[Option[DynamicContext]](None)
+
+  private[chisel3] def isDebugCaptureEnabled: Boolean = {
+    dynamicContextVar.value.exists(_.captureDebugInfo)
+  }
   private def dynamicContext: DynamicContext = {
     require(dynamicContextVar.value.isDefined, "must be inside Builder context")
     dynamicContextVar.value.get

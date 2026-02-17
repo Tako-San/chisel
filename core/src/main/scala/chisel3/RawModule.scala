@@ -2,6 +2,7 @@
 
 package chisel3
 
+import logger.LazyLogging
 import scala.util.Try
 import chisel3.experimental.{BaseModule, OpaqueType, SourceInfo, UnlocatableSourceInfo}
 import chisel3.internal._
@@ -164,6 +165,10 @@ abstract class RawModule extends BaseModule {
 
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
+
+    if (Builder.isDebugCaptureEnabled && !name.startsWith("_$$")) {
+      chisel3.experimental.debug.DebugCapture.capture(this)
+    }
 
     _closed = true
 
