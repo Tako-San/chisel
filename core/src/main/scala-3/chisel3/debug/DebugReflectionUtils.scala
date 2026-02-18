@@ -1,13 +1,5 @@
 package chisel3.debug
 
-/** Represents the parameters of a class constructor.
-  *
-  * @param name The name of the parameter
-  * @param typeName The type of the parameter
-  * @param value The value of the parameter. It is `None` when the annotator is not able to retrieve the value
-  */
-case class ClassParam(name: String, typeName: String, value: Option[String])
-
 /** Utilities for reflecting on Chisel types to extract constructor parameters.
   */
 object DebugReflectionUtils {
