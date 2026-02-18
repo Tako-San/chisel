@@ -15,6 +15,7 @@ import chisel3.stage.{
   DesignAnnotation,
   ThrowOnFirstErrorAnnotation
 }
+import chisel3.debug.{DebugRegistry, DebugRegistryAnnotation}
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq}
 import firrtl.options.{Dependency, Phase}
 import firrtl.options.Viewer.view
@@ -60,8 +61,11 @@ class Elaborate extends Phase {
             false,
             elaborationTrace
           )
-        val (elaboratedCircuit, dut) = {
-          Builder.build(Module(gen()), context)
+        // Wrap elaboration in withFreshRegistry to capture debug entries
+        val ((elaboratedCircuit, dut), debugEntries) = {
+          DebugRegistry.withFreshRegistry {
+            Builder.build(Module(gen()), context)
+          }
         }
         elaborationTrace.finish()
 
@@ -72,7 +76,8 @@ class Elaborate extends Phase {
 
         Seq(
           ChiselCircuitAnnotation(elaboratedCircuit),
-          DesignAnnotation(dut, layers = elaboratedCircuit._circuit.layers.flatMap(walkLayers(_)))
+          DesignAnnotation(dut, layers = elaboratedCircuit._circuit.layers.flatMap(walkLayers(_))),
+          DebugRegistryAnnotation(debugEntries)
         )
       } catch {
         /* if any throwable comes back and we're in "stack trace trimming" mode, then print an error and trim the stack trace

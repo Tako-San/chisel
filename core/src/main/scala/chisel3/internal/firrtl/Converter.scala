@@ -14,6 +14,7 @@ import chisel3.experimental.{
 }
 import chisel3.properties.Property
 import firrtl.{ir => fir}
+import scala.annotation.nowarn
 import chisel3.internal.{castToInt, throwException, HasId}
 import chisel3.internal.firrtl.ir._
 import chisel3.EnumType

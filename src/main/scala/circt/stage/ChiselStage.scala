@@ -4,11 +4,10 @@ package circt.stage
 
 import chisel3.{ElaboratedCircuit, RawModule}
 import chisel3.stage.{ChiselCircuitAnnotation, ChiselGeneratorAnnotation, CircuitSerializationAnnotation}
-import chisel3.stage.CircuitSerializationAnnotation.FirrtlFileFormat
+import chisel3.stage.phases.CollectDebugInfo
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq, EmittedVerilogCircuitAnnotation}
 import firrtl.options.{CustomFileEmission, Dependency, Phase, PhaseManager, Stage, StageMain, Unserializable}
 import firrtl.stage.FirrtlCircuitAnnotation
-import logger.LogLevelAnnotation
 import firrtl.EmittedBtor2CircuitAnnotation
 
 /** Entry point for running Chisel with the CIRCT compiler.
@@ -29,21 +28,25 @@ class ChiselStage extends Stage {
 
   override def run(annotations: AnnotationSeq): AnnotationSeq = {
 
+    val targets = Seq(
+      Dependency[chisel3.stage.phases.AddImplicitOutputFile],
+      Dependency[chisel3.stage.phases.AddImplicitOutputAnnotationFile],
+      Dependency[chisel3.stage.phases.AddSerializationAnnotations],
+      Dependency[chisel3.stage.phases.CollectDebugInfo],
+      Dependency[chisel3.stage.phases.Convert],
+      Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
+      Dependency[circt.stage.phases.AddImplicitOutputFile],
+      Dependency[circt.stage.phases.CIRCT]
+    )
+
     val pm = new PhaseManager(
-      targets = Seq(
-        Dependency[chisel3.stage.phases.AddImplicitOutputFile],
-        Dependency[chisel3.stage.phases.AddImplicitOutputAnnotationFile],
-        Dependency[chisel3.stage.phases.AddSerializationAnnotations],
-        Dependency[chisel3.stage.phases.Convert],
-        Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
-        Dependency[circt.stage.phases.AddImplicitOutputFile],
-        Dependency[circt.stage.phases.CIRCT]
-      ),
+      targets = targets,
       currentState = Seq(
         Dependency[firrtl.stage.phases.AddDefaults],
         Dependency[firrtl.stage.phases.Checks]
       )
     )
+
     pm.transform(annotations)
   }
 
@@ -56,6 +59,7 @@ object ChiselStage {
   private def phase = new PhaseManager(
     Seq(
       Dependency[chisel3.stage.phases.Elaborate],
+      Dependency[chisel3.stage.phases.CollectDebugInfo],
       Dependency[chisel3.stage.phases.Convert],
       Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
       Dependency[circt.stage.phases.AddImplicitOutputFile],
@@ -201,6 +205,7 @@ object ChiselStage {
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.SystemVerilog)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
+
     phase
       .transform(annos)
       .collectFirst { case EmittedVerilogCircuitAnnotation(a) =>
@@ -243,6 +248,7 @@ object ChiselStage {
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.Btor2)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
+
     phase
       .transform(annos)
       .collectFirst { case EmittedBtor2CircuitAnnotation(a) =>
