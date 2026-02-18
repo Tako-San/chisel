@@ -61,28 +61,10 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers {
 
   "DebugRegistry.get" should "return Some(entry) for existing entries" in {
     DebugRegistry.withFreshRegistry {
-      class TestModule extends RawModule {
-        val a = Wire(UInt(8.W))
-        a.instrumentDebug()
-      }
-      val elaborated = new Elaborate().transform(Seq(ChiselGeneratorAnnotation(() => new TestModule)))
-
-      val registryEntries = elaborated.toSeq.collectFirst { case DebugRegistryAnnotation(e) => e }
-        .getOrElse(Map.empty)
-
-      // Note: The DebugRegistryAnnotation contains entries that were collected during
-      // elaboration, but the registry itself is cleared after withFreshRegistry returns.
-      // So we can't test get() after elaboration is complete - the test structure
-      // here demonstrates that get() works when called within the same context.
-      registryEntries should not be empty
-
-      val (id, originalEntry) = registryEntries.head
-
-      // Verify the original entry was captured properly
-      originalEntry.data shouldBe a[UInt]
-      originalEntry.debugName shouldBe None
-      originalEntry.pathName shouldBe None
-      originalEntry.typeName shouldBe None
+      val id = "test-id-123"
+      val entry = DebugEntry(data = null, src = UnlocatableSourceInfo)
+      DebugRegistry.update(id, entry)
+      DebugRegistry.get(id) shouldBe Some(entry)
     }
   }
 
