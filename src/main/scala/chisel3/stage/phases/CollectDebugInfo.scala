@@ -73,12 +73,8 @@ class CollectDebugInfo extends Phase with LazyLogging {
         case when: When =>
           // Create new When as a copy, transforming both blocks
           val newWhen = new When(when.sourceInfo, when.pred)
-          val transformedIfRegion = transformBlock(when.ifRegion, debugEntries)
-          transformedIfRegion.getCommands().foreach(newWhen.ifRegion.addCommand)
-          if (when.hasElse) {
-            val transformedElseRegion = transformBlock(when.elseRegion, debugEntries)
-            transformedElseRegion.getCommands().foreach(newWhen.elseRegion.addCommand)
-          }
+          copyRegion(when.ifRegion, newWhen.ifRegion, debugEntries)
+          if (when.hasElse) copyRegion(when.elseRegion, newWhen.elseRegion, debugEntries)
           newBlock.addCommand(newWhen)
         case layerBlock: ir.LayerBlock =>
           val newLayerBlock = new ir.LayerBlock(layerBlock.sourceInfo, layerBlock.layer)

@@ -40,8 +40,6 @@ class DebugIntegrationSpec extends AnyFlatSpec with Matchers {
     // Count debug variable intrinsics in CHIRRTL output
     val count = chirrtlString.split(Pattern.quote("intrinsic(circt_dbg_variable")).length - 1
     count shouldBe 2
-
-    // Registry will be cleared by afterEach
   }
 
   "Full Pipeline" should "emit correct type information for complex data types" in {
@@ -66,8 +64,6 @@ class DebugIntegrationSpec extends AnyFlatSpec with Matchers {
 
     // Verify type information is present in the CHIRRTL output
     chirrtlString should include("type = \"MyBundle\"")
-
-    // Registry will be cleared by afterEach
   }
 
   "Full Pipeline" should "handle parameter extraction for modules with parameters" in {
@@ -121,8 +117,6 @@ class DebugIntegrationSpec extends AnyFlatSpec with Matchers {
     // Verify all three signals have debug intrinsics
     val count = chirrtlString.split(Pattern.quote("intrinsic(circt_dbg_variable")).length - 1
     count shouldBe 3
-
-    // Registry will be cleared by afterEach
   }
 
   "Full Pipeline" should "include path for hierarchical signals" in {

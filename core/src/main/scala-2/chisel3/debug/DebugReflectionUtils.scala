@@ -80,12 +80,10 @@ object DebugReflectionUtils {
                   catch { case NonFatal(_) => a.asTerm }
                 val valueTerm = im.reflectField(term).get
 
-                val finalValueTerm =
-                  if (valueTerm.isInstanceOf[Data]) {
-                    dataToTypeName(valueTerm)
-                  } else {
-                    valueTerm.toString
-                  }
+                val finalValueTerm = valueTerm match {
+                  case d: Data => dataToTypeName(d)
+                  case other => other.toString
+                }
                 Some(finalValueTerm)
               } catch {
                 case NonFatal(_) => None
@@ -102,11 +100,9 @@ object DebugReflectionUtils {
     * @param data The object whose type to convert
     * @return String representation of the type
     */
-  def dataToTypeName(data: Any): String = {
-    data match {
-      case null => "null"
-      case d: Data => d.typeName
-      case _ => data.getClass.getSimpleName
-    }
+  def dataToTypeName(data: Any): String = data match {
+    case null => "null"
+    case d: Data => d.typeName
+    case _ => data.getClass.getSimpleName
   }
 }
