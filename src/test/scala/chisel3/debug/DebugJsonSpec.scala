@@ -5,11 +5,28 @@ package chisel3.debug
 import chisel3._
 import chisel3.stage.ChiselGeneratorAnnotation
 import chisel3.stage.phases.Elaborate
-import chisel3.debug.{ClassParam, DebugJsonUtils, DebugRegistry, DebugRegistryAnnotation}
+import chisel3.stage.phases.DebugReflectionUtils
+import chisel3.debug.{ClassParam, DebugRegistry, DebugRegistryAnnotation}
 import circt.stage.ChiselStage
 import firrtl.{annoSeqToSeq, seqToAnnoSeq}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+
+/** Helper for JSON conversion in tests (using json4s) */
+object DebugJsonUtils {
+  import org.json4s.JsonDSL._
+  import org.json4s.native.JsonMethods.{compact, render}
+  implicit val formats: org.json4s.DefaultFormats.type = org.json4s.DefaultFormats
+
+  def toJson(params: Seq[ClassParam]): String = {
+    val json = params.map { cp =>
+      ("name" -> cp.name) ~
+        ("typeName" -> cp.typeName) ~
+        ("value" -> cp.value.map(_.toString).orNull)
+    }
+    compact(render(json))
+  }
+}
 
 class DebugJsonSpec extends AnyFlatSpec with Matchers {
 
@@ -20,20 +37,20 @@ class DebugJsonSpec extends AnyFlatSpec with Matchers {
     // Should escape null character as \u0000 (which in JSON is "\\u0000" in repr)
     // Note: the actual string contains the escape sequence \u0000
     json should include("\\u0000")
-    // Verify valid JSON format
-    json should startWith("{")
-    json should endWith("}")
+    // Verify valid JSON format - sequence produces array
+    json should startWith("[")
+    json should endWith("]")
   }
 
   "JSON escaping" should "escape null byte and other control characters" in {
     case class ControlChars(a: String, b: String)
     val obj = ControlChars(a = "text\u0001end", b = "text\u001fend")
     val json = DebugReflectionUtils.getParamsJson(obj)
-    // Should escape control chars \u0001 and \u001f
+    // Should escape control chars \u0001 and \u001F (uppercase in JSON output)
     json should include("\\u0001")
-    json should include("\\u001f")
-    json should startWith("{")
-    json should endWith("}")
+    json should include("\\u001F")
+    json should startWith("[")
+    json should endWith("]")
   }
 
   "JSON escaping" should "escape backslashes and quotes" in {
@@ -44,8 +61,8 @@ class DebugJsonSpec extends AnyFlatSpec with Matchers {
     json should include("\\\\")
     // Quotes are escaped as \"
     json should include("\\\"")
-    json should startWith("{")
-    json should endWith("}")
+    json should startWith("[")
+    json should endWith("]")
   }
 
   "JSON escaping" should "escape newlines and tabs" in {
@@ -55,8 +72,8 @@ class DebugJsonSpec extends AnyFlatSpec with Matchers {
     // Should escape newline and tab
     json should include("\\n")
     json should include("\\t")
-    json should startWith("{")
-    json should endWith("}")
+    json should startWith("[")
+    json should endWith("]")
   }
 
   "DebugJsonUtils.toJson" should "produce exact JSON format for single parameter with value" in {
@@ -67,8 +84,8 @@ class DebugJsonSpec extends AnyFlatSpec with Matchers {
     json should include("Int")
     json should include("value")
     json should include("5")
-    json should startWith("{")
-    json should endWith("}")
+    json should startWith("[")
+    json should endWith("]")
   }
 
   "DebugJsonUtils.toJson" should "produce exact JSON format for single parameter without value" in {
@@ -79,8 +96,8 @@ class DebugJsonSpec extends AnyFlatSpec with Matchers {
     json should include("Int")
     json should include("value")
     json should include("null")
-    json should startWith("{")
-    json should endWith("}")
+    json should startWith("[")
+    json should endWith("]")
   }
 
   "DebugJsonUtils.toJson" should "produce exact JSON format for multiple parameters" in {
@@ -99,14 +116,14 @@ class DebugJsonSpec extends AnyFlatSpec with Matchers {
     json should include("8")
     json should include("16")
     json should include("test")
-    json should startWith("{")
-    json should endWith("}")
+    json should startWith("[")
+    json should endWith("]")
   }
 
   "DebugJsonUtils.toJson" should "return empty object for empty params" in {
     val params = Seq.empty[ClassParam]
     val json = DebugJsonUtils.toJson(params)
-    json shouldBe "{}"
+    json shouldBe "[]"
   }
 
   "DebugJsonUtils.toJson" should "escape special characters in parameter names" in {

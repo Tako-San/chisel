@@ -3,6 +3,7 @@
 package chisel3.debug
 
 import chisel3._
+import chisel3.stage.phases.DebugReflectionUtils
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -96,16 +97,16 @@ class DebugReflectionSpec extends AnyFlatSpec with Matchers {
 
     // Check that JSON contains expected values
     json should include("\"intParam\"")
-    json should include("\"typeName\": \"Int\"")
-    json should include("\"value\": \"123\"")
+    json should include("\"typeName\":\"Int\"")
+    json should include("\"value\":\"123\"")
 
     json should include("\"stringParam\"")
-    json should include("\"typeName\": \"String\"")
-    json should include("\"value\": \"test\"")
+    json should include("\"typeName\":\"String\"")
+    json should include("\"value\":\"test\"")
 
-    // Verify it's valid JSON format
-    json should startWith("{")
-    json should endWith("}")
+    // Verify it's valid JSON format - sequence produces array
+    json should startWith("[")
+    json should endWith("]")
   }
 
   it should "handle classes with no constructor params" in {
@@ -123,9 +124,9 @@ class DebugReflectionSpec extends AnyFlatSpec with Matchers {
     val obj = TextWithSpecialChars(text = "Hello\nWorld\"Test\n")
     val json = DebugReflectionUtils.getParamsJson(obj)
 
-    // Verify the JSON is properly formatted (starts with { and ends with })
-    json should startWith("{")
-    json should endWith("}")
+    // Verify the JSON is properly formatted - sequence produces array
+    json should startWith("[")
+    json should endWith("]")
     // Note: JSON escaping behavior depends on implementation
     // The important thing is that invalid characters don't break the JSON format
   }

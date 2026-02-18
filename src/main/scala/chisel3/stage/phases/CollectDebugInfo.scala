@@ -7,7 +7,8 @@ import chisel3.ElaboratedCircuit
 // Import StringParam explicitly to document the intended source
 import chisel3.StringParam
 import chisel3._
-import chisel3.debug.{DebugEntry, DebugReflectionUtils, DebugRegistryAnnotation}
+import chisel3.debug.{DebugEntry, DebugRegistryAnnotation}
+import chisel3.stage.phases.DebugReflectionUtils
 import chisel3.internal.firrtl.ir._
 import chisel3.internal.firrtl.ir
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq}

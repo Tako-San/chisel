@@ -1,21 +1,28 @@
 package chisel3.stage.phases
 
 import chisel3.debug.ClassParam
-import play.api.libs.json._
+import org.json4s.JsonDSL._
+import org.json4s.native.JsonMethods.{compact, render}
 
 /** Utilities for reflecting on Chisel types to extract constructor parameters.
   */
 object DebugReflectionUtils {
 
-  implicit val classParamWrites: OWrites[ClassParam] = Json.writes[ClassParam]
+  implicit val formats: org.json4s.DefaultFormats.type = org.json4s.DefaultFormats
 
   /** Get constructor parameters of the target's class and serialize to JSON.
     *
     * @param target The instance to inspect
     * @return JSON string containing the constructor parameters
     */
-  def getParamsJson(target: Any): String =
-    Json.toJson(getConstructorParams(target)).toString
+  def getParamsJson(target: Any): String = {
+    val params = getConstructorParams(target).map { cp =>
+      ("name" -> cp.name) ~
+        ("typeName" -> cp.typeName) ~
+        ("value" -> cp.value.map(_.toString).orNull)
+    }
+    compact(render(params))
+  }
 
   /** Extract constructor parameters from the target's class using Scala reflection.
     *

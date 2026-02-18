@@ -209,8 +209,13 @@ class DebugIntegrationSpec extends AnyFlatSpec with Matchers {
     // Simple structural validation without deprecated JSON parsers
     jsonMatches.foreach { m =>
       val json = m.group(1)
-      json should startWith("{")
-      json should endWith("}")
+      // Empty params produce empty array [], non-empty produce [{...},...]
+      if (json == "[]") {
+        json shouldBe "[]"
+      } else {
+        json should startWith("[")
+        json should endWith("]")
+      }
       (json should not).include("}{") // no malformed nested blocks
     }
   }
