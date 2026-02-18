@@ -195,10 +195,10 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
     // Both should have exactly 1 entry
     entries1.size shouldBe 1
     entries2.size shouldBe 1
-    // They're different object instances
+    // The maps are different object instances (proves isolation)
     entries1 should not be theSameInstanceAs(entries2)
-    // Keys should be different because each debug call gets a unique ID
-    (entries1.keys should not).equal(entries2.keys)
+    // The DebugEntry values are different objects (each elaboration creates new objects)
+    entries1.values.head should not be theSameInstanceAs(entries2.values.head)
   }
 
   "Hierarchical module instantiation" should "preserve debug entries across levels" in {

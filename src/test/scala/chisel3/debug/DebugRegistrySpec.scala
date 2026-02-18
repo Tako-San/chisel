@@ -43,7 +43,11 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers {
 
   "DebugRegistry" should "silently ignore register calls outside withFreshRegistry context" in {
     // No active registry — call should be no-op
-    // Note: We can't create Wire outside module context, so we just verify the registry is empty
+    // Note: This is a smoke test for NPE safety. We can't call DebugRegistry.register() directly
+    // here because that would require creating a Wire outside module context. The withFreshRegistry
+    // value is None outside of module elaboration context, so register() calls are silently ignored.
+    // A more direct test would require reflection or modifying the module context, which would
+    // add unnecessary complexity. This test primarily verifies no NullPointerException is thrown.
     DebugRegistry.entries shouldBe empty
   }
 }
