@@ -28,19 +28,17 @@ class ChiselStage extends Stage {
 
   override def run(annotations: AnnotationSeq): AnnotationSeq = {
 
-    val targets = Seq(
-      Dependency[chisel3.stage.phases.AddImplicitOutputFile],
-      Dependency[chisel3.stage.phases.AddImplicitOutputAnnotationFile],
-      Dependency[chisel3.stage.phases.AddSerializationAnnotations],
-      Dependency[chisel3.stage.phases.CollectDebugInfo],
-      Dependency[chisel3.stage.phases.Convert],
-      Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
-      Dependency[circt.stage.phases.AddImplicitOutputFile],
-      Dependency[circt.stage.phases.CIRCT]
-    )
-
     val pm = new PhaseManager(
-      targets = targets,
+      targets = Seq(
+        Dependency[chisel3.stage.phases.AddImplicitOutputFile],
+        Dependency[chisel3.stage.phases.AddImplicitOutputAnnotationFile],
+        Dependency[chisel3.stage.phases.AddSerializationAnnotations],
+        Dependency[chisel3.stage.phases.CollectDebugInfo],
+        Dependency[chisel3.stage.phases.Convert],
+        Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
+        Dependency[circt.stage.phases.AddImplicitOutputFile],
+        Dependency[circt.stage.phases.CIRCT]
+      ),
       currentState = Seq(
         Dependency[firrtl.stage.phases.AddDefaults],
         Dependency[firrtl.stage.phases.Checks]

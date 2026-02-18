@@ -19,7 +19,7 @@ import firrtl.annotations.{Annotation, JsonProtocol}
 import chisel3.internal.{castToInt, throwException, HasId}
 import chisel3.internal.firrtl.ir._
 import chisel3.EnumType
-import scala.annotation.{nowarn, tailrec}
+import scala.annotation.tailrec
 import scala.collection.immutable.{Queue, VectorBuilder, VectorMap}
 
 private[chisel3] object Serializer {
