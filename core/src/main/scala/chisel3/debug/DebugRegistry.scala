@@ -16,7 +16,7 @@ case class DebugEntry(
   paramsJson:   Option[String] = None
 )
 
-object DebugRegistry {
+private[chisel3] object DebugRegistry {
   private val _current = new scala.util.DynamicVariable[Option[TrieMap[String, DebugEntry]]](None)
 
   // NOTE: IDs are stable within a single elaboration run but not across JVM restarts.
@@ -26,7 +26,7 @@ object DebugRegistry {
   /** Returns the next global call sequence number */
   def nextCallId(): Long = globalCallCounter.incrementAndGet()
 
-  def withFreshRegistry[A](body: => A): (A, Map[String, DebugEntry]) = {
+  private[chisel3] def withFreshRegistry[A](body: => A): (A, Map[String, DebugEntry]) = {
     val map = TrieMap.empty[String, DebugEntry]
     val result = _current.withValue(Some(map))(body)
     (result, map.toMap)
@@ -35,7 +35,7 @@ object DebugRegistry {
   private def withRegistry(f: TrieMap[String, DebugEntry] => Unit): Unit =
     _current.value.foreach(f)
 
-  def register(id: String, data: Data, debugName: Option[String])(implicit src: SourceInfo): Unit =
+  private[debug] def register(id: String, data: Data, debugName: Option[String])(implicit src: SourceInfo): Unit =
     withRegistry { registry =>
       // Capture instanceName safely during elaboration when Builder context is available
       val capturedInstanceName =
@@ -44,12 +44,12 @@ object DebugRegistry {
       registry(id) = DebugEntry(data, src, debugName, capturedInstanceName)
     }
 
-  def get(id: String): Option[DebugEntry] =
+  private[chisel3] def get(id: String): Option[DebugEntry] =
     _current.value.flatMap(_.get(id))
 
-  def update(id: String, entry: DebugEntry): Unit =
+  private[chisel3] def update(id: String, entry: DebugEntry): Unit =
     withRegistry(_(id) = entry)
 
-  def entries: Seq[(String, DebugEntry)] =
+  private[chisel3] def entries: Seq[(String, DebugEntry)] =
     _current.value.fold(Seq.empty[(String, DebugEntry)])(_.toSeq.sortBy(_._1))
 }
