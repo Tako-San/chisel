@@ -11,7 +11,7 @@ import firrtl.{annoSeqToSeq, seqToAnnoSeq}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
+class DebugSourceInfoSpec extends AnyFlatSpec with Matchers with DebugTestHelpers {
 
   private def elaborateAndGetEntries[T <: RawModule](gen: => T): Map[String, DebugEntry] = {
     val annos = Seq(ChiselGeneratorAnnotation(() => gen))

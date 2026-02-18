@@ -17,10 +17,8 @@ object DebugReflectionUtils {
     * @param target The instance to inspect
     * @return JSON string containing the constructor parameters
     */
-  def getParamsJson(target: Any): String = {
-    val params = getConstructorParams(target)
-    DebugJsonUtils.toJson(params)
-  }
+  def getParamsJson(target: Any): String =
+    DebugJsonUtils.toJson(getConstructorParams(target))
 
   /** Extract constructor parameters from the target's class using Scala reflection.
     *
@@ -53,14 +51,11 @@ object DebugReflectionUtils {
           try { Some(field.get(target)) }
           catch { case _: Exception => None }
 
-        val paramValue = rawValue.map {
-          case d: chisel3.Data => d.typeName
-          case other => other.toString
+        val (typeName, paramValue) = rawValue match {
+          case Some(d: chisel3.Data) => (d.getClass.getSimpleName, Some(d.typeName))
+          case Some(other)           => (other.getClass.getSimpleName, Some(other.toString))
+          case None                  => ("Unknown", None)
         }
-        val typeName = rawValue.map {
-          case d: chisel3.Data => d.getClass.getSimpleName
-          case other => other.getClass.getSimpleName
-        }.getOrElse("Unknown")
 
         ClassParam(paramName, typeName, paramValue)
       }.toSeq

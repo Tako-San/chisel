@@ -23,10 +23,8 @@ object DebugReflectionUtils {
     * @param target The instance to inspect
     * @return JSON string containing the constructor parameters
     */
-  def getParamsJson(target: Any): String = {
-    val params = getConstructorParams(target)
-    DebugJsonUtils.toJson(params)
-  }
+  def getParamsJson(target: Any): String =
+    DebugJsonUtils.toJson(getConstructorParams(target))
 
   /** Extract constructor parameters from the target's class using Scala reflection.
     *

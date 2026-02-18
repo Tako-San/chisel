@@ -4,9 +4,8 @@ package chisel3.stage.phases
 
 import chisel3.stage.ChiselCircuitAnnotation
 import chisel3.ElaboratedCircuit
-import chisel3._ // Import chisel3 package for StringParam/Param type aliases
+import chisel3.{StringParam, _}
 import chisel3.debug.{DebugEntry, DebugReflectionUtils, DebugRegistryAnnotation}
-// DebugRegistry no longer used after refactor
 import chisel3.internal.firrtl.ir._
 import chisel3.internal.firrtl.ir
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq}
@@ -80,17 +79,12 @@ class CollectDebugInfo extends Phase with LazyLogging {
           }
           newBlock.addCommand(newWhen)
         case layerBlock: ir.LayerBlock =>
-          // Transform LayerBlock region recursively
-          // LayerBlock is a Command containing a Block that needs transformation
           val newLayerBlock = new ir.LayerBlock(layerBlock.sourceInfo, layerBlock.layer)
-          val transformedRegion = transformBlock(layerBlock.region, debugEntries)
-          transformedRegion.getCommands().foreach(newLayerBlock.region.addCommand)
+          copyRegion(layerBlock.region, newLayerBlock.region, debugEntries)
           newBlock.addCommand(newLayerBlock)
         case defContract: ir.DefContract =>
-          // Transform DefContract region recursively
           val newDefContract = new ir.DefContract(defContract.sourceInfo, defContract.ids, defContract.exprs)
-          val transformedRegion = transformBlock(defContract.region, debugEntries)
-          transformedRegion.getCommands().foreach(newDefContract.region.addCommand)
+          copyRegion(defContract.region, newDefContract.region, debugEntries)
           newBlock.addCommand(newDefContract)
         case other => newBlock.addCommand(other)
       }
@@ -112,6 +106,9 @@ class CollectDebugInfo extends Phase with LazyLogging {
     circuit.copy(components = circuit.components.map(c => transformComponent(c, debugEntries)))
   }
 
+  private def copyRegion(src: Block, dst: Block, entries: Map[String, DebugEntry]): Unit =
+    transformBlock(src, entries).getCommands().foreach(dst.addCommand)
+
   private def preprocessEntries(entries: Map[String, DebugEntry]): Map[String, DebugEntry] = {
     entries.map { case (id, entry) =>
       val fullPath = Try(entry.data.pathName).toOption
@@ -122,12 +119,11 @@ class CollectDebugInfo extends Phase with LazyLogging {
         case None      => "{}"
       }
 
-      val updatedEntry = entry.copy(
+      id -> entry.copy(
         pathName = fullPath,
         typeName = Some(typeName),
         paramsJson = Some(params)
       )
-      id -> updatedEntry
     }
   }
 

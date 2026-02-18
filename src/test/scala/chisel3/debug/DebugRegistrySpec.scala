@@ -63,29 +63,29 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers with DebugTestHelpers 
   }
 
   "DebugRegistry" should "update entry metadata" in {
+    class TestModule extends RawModule {
+      val a = Wire(UInt(8.W))
+      a.instrumentDebug()
+    }
+
+    val registryEntries = getDebugEntries(() => new TestModule)
+
+    val (id, originalEntry) = registryEntries.head
+
+    // Verify original entry state
+    originalEntry.pathName shouldBe None
+    originalEntry.typeName shouldBe None
+    originalEntry.paramsJson shouldBe None
+
+    // Create an updated entry with new metadata
+    val updatedEntry = originalEntry.copy(
+      pathName = Some("updated/path"),
+      typeName = Some("UpdatedType"),
+      paramsJson = Some("""{"param": "value"}""")
+    )
+
+    // Update the entry
     DebugRegistry.withFreshRegistry {
-      class TestModule extends RawModule {
-        val a = Wire(UInt(8.W))
-        a.instrumentDebug()
-      }
-
-      val registryEntries = getDebugEntries(() => new TestModule)
-
-      val (id, originalEntry) = registryEntries.head
-
-      // Verify original entry state
-      originalEntry.pathName shouldBe None
-      originalEntry.typeName shouldBe None
-      originalEntry.paramsJson shouldBe None
-
-      // Create an updated entry with new metadata
-      val updatedEntry = originalEntry.copy(
-        pathName = Some("updated/path"),
-        typeName = Some("UpdatedType"),
-        paramsJson = Some("""{"param": "value"}""")
-      )
-
-      // Update the entry
       DebugRegistry.update(id, updatedEntry)
 
       // Verify the entry was updated using get
@@ -106,23 +106,23 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers with DebugTestHelpers 
   }
 
   "DebugRegistry" should "update multiple fields simultaneously" in {
+    class TestModule extends RawModule {
+      val a = Wire(UInt(16.W))
+      a.instrumentDebug("testSignal")
+    }
+
+    val registryEntries = getDebugEntries(() => new TestModule)
+
+    val (id, originalEntry) = registryEntries.head
+
+    // Update all optional fields at once
+    val updatedEntry = originalEntry.copy(
+      pathName = Some("Module.submodule.signal"),
+      typeName = Some("UInt<16>"),
+      paramsJson = Some("""{"width": 16, "init": 5}""")
+    )
+
     DebugRegistry.withFreshRegistry {
-      class TestModule extends RawModule {
-        val a = Wire(UInt(16.W))
-        a.instrumentDebug("testSignal")
-      }
-
-      val registryEntries = getDebugEntries(() => new TestModule)
-
-      val (id, originalEntry) = registryEntries.head
-
-      // Update all optional fields at once
-      val updatedEntry = originalEntry.copy(
-        pathName = Some("Module.submodule.signal"),
-        typeName = Some("UInt<16>"),
-        paramsJson = Some("""{"width": 16, "init": 5}""")
-      )
-
       DebugRegistry.update(id, updatedEntry)
 
       // Verify all updates
