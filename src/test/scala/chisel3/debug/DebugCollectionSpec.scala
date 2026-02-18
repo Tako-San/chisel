@@ -31,7 +31,7 @@ class DebugCollectionSpec extends AnyFlatSpec with Matchers with BeforeAndAfterE
     val chirrtl = result.collectFirst { case a: chisel3.stage.ChiselCircuitAnnotation =>
       a
     }.get.elaboratedCircuit.serialize
-    chirrtl should include("inst1")
-    chirrtl should include("mySig")
+    chirrtl should include("""intrinsic(circt_dbg_variable""")
+    chirrtl should include("""path = "Top.inst1.mySig"""")
   }
 }

@@ -13,6 +13,14 @@ import org.scalatest.matchers.should.Matchers
 
 class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
 
+  private def elaborateAndGetEntries[T <: RawModule](gen: => T): Map[String, DebugEntry] = {
+    val annos = Seq(ChiselGeneratorAnnotation(() => gen))
+    val results = new Elaborate().transform(annos)
+    results.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
+      entries
+    }.get
+  }
+
   "DebugEntry.src" should "be preserved when registering debug info" in {
     class TestModule extends RawModule {
       val w = Wire(UInt(8.W))
@@ -20,13 +28,7 @@ class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug()
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
-
-    val entries = registryEntries.toSeq
+    val entries = elaborateAndGetEntries(new TestModule).toSeq
     entries should have size 1
 
     val (_, entry) = entries.head
@@ -41,13 +43,7 @@ class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug()
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
-
-    val entries = registryEntries.toSeq
+    val entries = elaborateAndGetEntries(new TestModule).toSeq
     entries should have size 1
 
     val (_, entry) = entries.head
@@ -67,13 +63,7 @@ class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug() // This line's source info should be captured
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
-
-    val entries = registryEntries.toSeq
+    val entries = elaborateAndGetEntries(new TestModule).toSeq
     entries should have size 1
 
     val (_, entry) = entries.head
@@ -102,13 +92,7 @@ class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
       w3.instrumentDebug()
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
-
-    val entries = registryEntries.toSeq
+    val entries = elaborateAndGetEntries(new TestModule).toSeq
     entries should have size 3
 
     // All entries should have valid SourceInfo
@@ -126,13 +110,7 @@ class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug()
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
-
-    val entries = registryEntries.toSeq
+    val entries = elaborateAndGetEntries(new TestModule).toSeq
     entries should have size 1
 
     val entry = entries.head._2
@@ -149,13 +127,7 @@ class DebugSourceInfoSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug()
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
-
-    val entries = registryEntries.toSeq
+    val entries = elaborateAndGetEntries(new TestModule).toSeq
     entries should have size 1
 
     val (_, entry) = entries.head

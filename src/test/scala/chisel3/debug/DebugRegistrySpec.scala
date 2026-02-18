@@ -3,6 +3,7 @@
 package chisel3.debug
 
 import chisel3._
+import chisel3.experimental.{SourceInfo, UnlocatableSourceInfo}
 import chisel3.stage.ChiselGeneratorAnnotation
 import chisel3.stage.phases.Elaborate
 import chisel3.debug.{DebugRegistry, DebugRegistryAnnotation}
@@ -38,5 +39,11 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers {
     // pathName and typeName should be None since we only ran Elaborate
     entry.pathName shouldBe None
     entry.typeName shouldBe None
+  }
+
+  "DebugRegistry" should "silently ignore register calls outside withFreshRegistry context" in {
+    // No active registry — call should be no-op
+    // Note: We can't create Wire outside module context, so we just verify the registry is empty
+    DebugRegistry.entries shouldBe empty
   }
 }

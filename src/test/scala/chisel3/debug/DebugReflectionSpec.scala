@@ -129,4 +129,12 @@ class DebugReflectionSpec extends AnyFlatSpec with Matchers {
     // Note: JSON escaping behavior depends on implementation
     // The important thing is that invalid characters don't break the JSON format
   }
+
+  it should "handle chisel3.Data module parameters correctly" in {
+    // Need to handle Data by constructing the module
+    // Extract the Data type's typeName
+    val testUInt = 8.U
+    val typeName = DebugReflectionUtils.dataToTypeName(testUInt)
+    typeName shouldBe "UInt<4>"
+  }
 }

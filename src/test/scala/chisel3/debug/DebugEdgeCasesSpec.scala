@@ -158,9 +158,12 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
     try {
       val annos = Seq(ChiselGeneratorAnnotation(() => new BrokenMod))
       new Elaborate().transform(annos)
+      fail("Should have thrown exception")
     } catch {
       case _: IllegalArgumentException =>
-      // Expected for the failed require
+        // Expected for the failed require
+        // Verify registry is cleared after exception
+        DebugRegistry.entries shouldBe empty
     }
   }
 
@@ -189,10 +192,10 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
 
     entries2 should not be empty
     // Isolation semantics: verify registry snapshots are independent
-    // Both registries should have exactly 1 entry
-    entries1.size shouldBe entries2.size // both have 1 entry
-    entries1.size shouldBe 1 // explicit count
-    // They are different objects (not the same instance)
+    // Both should have exactly 1 entry
+    entries1.size shouldBe 1
+    entries2.size shouldBe 1
+    // They're different object instances
     entries1 should not be theSameInstanceAs(entries2)
     // Keys should be different because each debug call gets a unique ID
     (entries1.keys should not).equal(entries2.keys)
