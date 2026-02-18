@@ -124,4 +124,100 @@ class DebugIntegrationSpec extends AnyFlatSpec with Matchers {
 
     // Registry will be cleared by afterEach
   }
+
+  "Full Pipeline" should "include path for hierarchical signals" in {
+    class SubModule extends RawModule {
+      val w = Wire(UInt(8.W))
+      w.suggestName("subWire")
+      w.instrumentDebug()
+    }
+
+    class TopModule extends RawModule {
+      val sub = Module(new SubModule)
+      val w = Wire(Bool())
+      w.suggestName("topWire")
+      w.instrumentDebug()
+    }
+
+    val chirrtlString = ChiselStage.emitCHIRRTL(new TopModule)
+
+    // Verify path parameter is present and includes hierarchy
+    chirrtlString should include("path = \"TopModule.sub.subWire\"")
+    chirrtlString should include("path = \"TopModule.topWire\"")
+  }
+
+  "Full Pipeline" should "handle nested module parameters" in {
+    class InnerModule(depth: Int) extends RawModule {
+      val w = Wire(UInt(8.W))
+      w.suggestName("innerWire")
+      w.instrumentDebug()
+    }
+
+    class MiddleModule(count: Int) extends RawModule {
+      val inner = Module(new InnerModule(depth = count))
+      val w = Wire(UInt(16.W))
+      w.suggestName("middleWire")
+      w.instrumentDebug()
+    }
+
+    class TopModule extends RawModule {
+      val middle = Module(new MiddleModule(count = 10))
+    }
+
+    val chirrtlString = ChiselStage.emitCHIRRTL(new TopModule)
+
+    // Should have params for each module
+    chirrtlString should include("params =")
+    // Should have path information for nested modules
+    chirrtlString should include("TopModule.middle")
+  }
+
+  "Full Pipeline" should "preserve type information for complex data types" in {
+    class ComplexBundle extends Bundle {
+      val a = UInt(8.W)
+      val b = SInt(16.W)
+      val c = Bool()
+    }
+
+    class ComplexModule extends RawModule {
+      val myBundle = Wire(new ComplexBundle).suggestName("myBundle")
+      myBundle.instrumentDebug()
+    }
+
+    val chirrtlString = ChiselStage.emitCHIRRTL(new ComplexModule)
+
+    // Verify type is preserved for complex types
+    chirrtlString should include("type = \"ComplexBundle\"")
+  }
+
+  "Full Pipeline" should "be valid JSON for all entries" in {
+    class TestModule extends RawModule {
+      val w = Wire(UInt(8.W))
+      w.suggestName("testWire")
+      w.instrumentDebug()
+
+      val b = Wire(Bool())
+      b.suggestName("testBool")
+      b.instrumentDebug()
+
+      val v = Wire(Vec(2, UInt(8.W)))
+      v.suggestName("testVec")
+      v.instrumentDebug()
+    }
+
+    val chirrtlString = ChiselStage.emitCHIRRTL(new TestModule)
+
+    // All entries should have valid JSON structure
+    // Extract JSON strings from the output
+    val jsonMatches = "params = \"([^\"]+)\"".r.findAllMatchIn(chirrtlString).toList
+    jsonMatches should not be empty
+
+    // Simple structural validation without deprecated JSON parsers
+    jsonMatches.foreach { m =>
+      val json = m.group(1)
+      json should startWith("{")
+      json should endWith("}")
+      (json should not).include("}{") // no malformed nested blocks
+    }
+  }
 }

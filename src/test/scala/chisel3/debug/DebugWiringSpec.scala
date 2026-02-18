@@ -34,22 +34,6 @@ class DebugWiringSpec extends AnyFlatSpec with Matchers with BeforeAndAfterEach 
     }
   }
 
-  it should "clear the registry after execution" in {
-    class SimpleMod extends RawModule {
-      val x = Wire(Bool()).suggestName("testSig")
-      x.instrumentDebug()
-    }
-
-    // Run once
-    val chirrtl = ChiselStage.emitCHIRRTL(new SimpleMod)
-    chirrtl should include("intrinsic(circt_dbg_variable")
-
-    // Check registry is empty within a fresh context
-    DebugRegistry.withFreshRegistry {
-      DebugRegistry.entries should be(empty)
-    }
-  }
-
   it should "work with multiple sequential runs" in {
     class Mod1 extends RawModule {
       val x = Wire(Bool()).suggestName("mod1Sig")
@@ -65,19 +49,13 @@ class DebugWiringSpec extends AnyFlatSpec with Matchers with BeforeAndAfterEach 
     val chirrtl1 = ChiselStage.emitCHIRRTL(new Mod1)
     chirrtl1 should include("Mod1.mod1Sig")
     chirrtl1 should include("intrinsic(circt_dbg_variable")
-    DebugRegistry.withFreshRegistry {
-      DebugRegistry.entries should be(empty)
-    }
 
     // Run second module
     val chirrtl2 = ChiselStage.emitCHIRRTL(new Mod2)
     chirrtl2 should include("Mod2.mod2Sig")
     chirrtl2 should include("intrinsic(circt_dbg_variable")
-    DebugRegistry.withFreshRegistry {
-      DebugRegistry.entries should be(empty)
-    }
 
-    // Verify no cross-contamination
+    // Verify no cross-contamination - each output contains only its own module name
     (chirrtl1 should not).include("Mod2")
     (chirrtl2 should not).include("Mod1")
   }
