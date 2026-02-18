@@ -6,9 +6,8 @@ import chisel3.stage.phases.{CollectDebugInfo, Elaborate}
 import firrtl.{annoSeqToSeq, seqToAnnoSeq}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import org.scalatest.BeforeAndAfterEach
 
-class DebugCollectionSpec extends AnyFlatSpec with Matchers with BeforeAndAfterEach {
+class DebugCollectionSpec extends AnyFlatSpec with Matchers {
 
   "CollectDebugInfo Phase" should "resolve hierarchical paths" in {
     // Define hierarchy

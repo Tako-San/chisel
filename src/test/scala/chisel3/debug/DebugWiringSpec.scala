@@ -6,9 +6,8 @@ import chisel3._
 import circt.stage.ChiselStage
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import org.scalatest.BeforeAndAfterEach
 
-class DebugWiringSpec extends AnyFlatSpec with Matchers with BeforeAndAfterEach {
+class DebugWiringSpec extends AnyFlatSpec with Matchers {
 
   "ChiselStage" should "execute CollectDebugInfo phase automatically" in {
 
