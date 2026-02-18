@@ -1,6 +1,6 @@
 package chisel3
 
-import chisel3.experimental.SourceInfo
+import chisel3.experimental.{SourceInfo, SourceLine}
 import chisel3.internal.firrtl.ir._
 
 package object debug {
@@ -21,17 +21,18 @@ package object debug {
     // Use filename, line, global call sequence, and name for deterministic ID
     val sourceFile = src.filenameOption.getOrElse("_")
     val sourceLine = src match {
-      case sl: chisel3.experimental.SourceLine => sl.line.toString
+      case sl: SourceLine => sl.line.toString
       case _ => "0"
     }
     val callSeq = DebugRegistry.nextCallId()
     val input = s"$sourceFile:$sourceLine:$callSeq:$name"
 
-    val id = {
-      val md = MessageDigest.getInstance("SHA-256")
-      val digest = md.digest(input.getBytes("UTF-8"))
-      digest.take(8).map("%02x".format(_)).mkString // 16 hex chars
-    }
+    val id = MessageDigest
+      .getInstance("SHA-256")
+      .digest(input.getBytes("UTF-8"))
+      .take(8)
+      .map("%02x".format(_))
+      .mkString // 16 hex chars
 
     Intrinsic("circt_dbg_placeholder", "id" -> StringParam(id))(data)
     DebugRegistry.register(id, data, debugName = if (name.isEmpty) None else Some(name))
@@ -57,8 +58,7 @@ package object debug {
       * @param name optional source-language debug name; defaults to `instanceName`
       * @return this signal (for chaining)
       */
-    def instrumentDebug(name: String = "")(implicit src: SourceInfo): T = {
+    def instrumentDebug(name: String = "")(implicit src: SourceInfo): T =
       debug(data, name)
-    }
   }
 }

@@ -12,6 +12,7 @@ import chisel3.internal.firrtl.ir
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq}
 import firrtl.options.{Dependency, Phase}
 import logger.LazyLogging
+import scala.util.Try
 
 /** Collects debug information from the elaborated circuit and replaces placeholder intrinsics.
   *
@@ -113,12 +114,7 @@ class CollectDebugInfo extends Phase with LazyLogging {
 
   private def preprocessEntries(entries: Map[String, DebugEntry]): Map[String, DebugEntry] = {
     entries.map { case (id, entry) =>
-      val fullPath =
-        try {
-          Some(entry.data.pathName)
-        } catch {
-          case _: Exception => None
-        }
+      val fullPath = Try(entry.data.pathName).toOption
 
       val typeName = DebugReflectionUtils.dataToTypeName(entry.data)
       val params = entry.data._parent match {
@@ -136,10 +132,10 @@ class CollectDebugInfo extends Phase with LazyLogging {
   }
 
   def transform(annotations: AnnotationSeq): AnnotationSeq = {
-    val annotationSeq = annoSeqToSeq(annotations)
+    val annos = annoSeqToSeq(annotations)
 
     // Extract and consume DebugRegistryAnnotation
-    val registryEntries = annotationSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
+    val registryEntries = annos.collectFirst { case DebugRegistryAnnotation(entries) =>
       entries
     }.getOrElse(Map.empty)
 
@@ -147,7 +143,7 @@ class CollectDebugInfo extends Phase with LazyLogging {
     val debugEntries = preprocessEntries(registryEntries)
 
     // Transform circuit and consume DebugRegistryAnnotation in a single flatMap
-    seqToAnnoSeq(annotationSeq.flatMap {
+    seqToAnnoSeq(annos.flatMap {
       case a: ChiselCircuitAnnotation =>
         val elaboratedCircuit = a.elaboratedCircuit
         val newCircuit = transformCircuit(elaboratedCircuit._circuit, debugEntries)

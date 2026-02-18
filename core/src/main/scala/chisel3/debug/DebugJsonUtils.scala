@@ -6,7 +6,7 @@ private[debug] object DebugJsonUtils {
     val entries = params.map { param =>
       val valueStr = param.value match {
         case Some(v) => s""""value": "${escapeJson(v)}""""
-        case None    => """ "value": null """
+        case None    => """"value": null"""
       }
       s"""    "${escapeJson(param.name)}": {
          |      "typeName": "${escapeJson(param.typeName)}",

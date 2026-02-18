@@ -32,28 +32,24 @@ object DebugRegistry {
     (result, map.toMap)
   }
 
-  def register(id: String, data: Data, debugName: Option[String])(implicit src: SourceInfo): Unit = {
-    _current.value match {
-      case Some(registry) =>
-        // Capture instanceName safely during elaboration when Builder context is available
-        val capturedInstanceName =
-          try Some(data.instanceName)
-          catch { case _: Exception => None }
-        registry(id) = DebugEntry(data, src, debugName, capturedInstanceName)
-      case None => () // Silently ignore calls outside context (mods without debug pipeline)
+  private def withRegistry(f: TrieMap[String, DebugEntry] => Unit): Unit =
+    _current.value.foreach(f)
+
+  def register(id: String, data: Data, debugName: Option[String])(implicit src: SourceInfo): Unit =
+    withRegistry { registry =>
+      // Capture instanceName safely during elaboration when Builder context is available
+      val capturedInstanceName =
+        try Some(data.instanceName)
+        catch { case _: Exception => None }
+      registry(id) = DebugEntry(data, src, debugName, capturedInstanceName)
     }
-  }
 
   def get(id: String): Option[DebugEntry] =
     _current.value.flatMap(_.get(id))
 
-  def update(id: String, entry: DebugEntry): Unit = {
-    _current.value match {
-      case Some(registry) => registry(id) = entry
-      case None           => () // Silently ignore calls outside context
-    }
-  }
+  def update(id: String, entry: DebugEntry): Unit =
+    withRegistry(_(id) = entry)
 
   def entries: Seq[(String, DebugEntry)] =
-    _current.value.map(_.toSeq.sortBy(_._1)).getOrElse(Seq.empty)
+    _current.value.fold(Seq.empty[(String, DebugEntry)])(_.toSeq.sortBy(_._1))
 }

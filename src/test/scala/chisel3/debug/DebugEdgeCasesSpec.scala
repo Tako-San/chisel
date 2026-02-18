@@ -6,13 +6,13 @@ import chisel3._
 import chisel3.stage.ChiselGeneratorAnnotation
 import chisel3.stage.phases.Elaborate
 import chisel3.debug.{DebugRegistry, DebugRegistryAnnotation}
-import circt.stage.ChiselStage
+import circt.stage.{ChiselStage => CirctChiselStage}
 import firrtl.{annoSeqToSeq, seqToAnnoSeq}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.util.regex.Pattern
 
-class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
+class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers with DebugTestHelpers {
 
   "RegInit" should "be correctly instrumented for debug" in {
     class TestModule extends Module {
@@ -21,7 +21,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       reg.instrumentDebug()
     }
 
-    val chirrtlString = ChiselStage.emitCHIRRTL(new TestModule)
+    val chirrtlString = CirctChiselStage.emitCHIRRTL(new TestModule)
 
     // Verify the debug variable intrinsic is present for RegInit
     chirrtlString should include("intrinsic(circt_dbg_variable")
@@ -35,13 +35,9 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug("second_call")
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
+    val registryEntries = getDebugEntries(() => new TestModule)
 
-    // Два вызова → два UUID → два entry
+    // Two calls → two UUIDs → two entries
     val entries = registryEntries.toSeq
     entries should have size 2
 
@@ -56,7 +52,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug("a")
       w.instrumentDebug("b")
     }
-    val chirrtl = ChiselStage.emitCHIRRTL(new TestModule)
+    val chirrtl = CirctChiselStage.emitCHIRRTL(new TestModule)
     val count = chirrtl.split(Pattern.quote("intrinsic(circt_dbg_variable")).length - 1
     count shouldBe 2
   }
@@ -72,7 +68,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       val uninst = Module(new UninstrumentedModule)
     }
 
-    val chirrtlString = ChiselStage.emitCHIRRTL(new TopModule)
+    val chirrtlString = CirctChiselStage.emitCHIRRTL(new TopModule)
 
     // Verify no debug intrinsics are present for the uninstrumented module
     (chirrtlString should not).include("intrinsic(circt_dbg_variable)")
@@ -89,11 +85,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       // No instrumentation
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
+    val registryEntries = getDebugEntries(() => new TestModule)
 
     val entries = registryEntries.toSeq
     // Only one entry should be registered (the instrumented wire)
@@ -121,7 +113,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
 
     // Should not crash
     noException should be thrownBy {
-      ChiselStage.emitCHIRRTL(new TestModule)
+      CirctChiselStage.emitCHIRRTL(new TestModule)
     }
   }
 
@@ -142,7 +134,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
 
     // Should not crash
     noException should be thrownBy {
-      ChiselStage.emitCHIRRTL(new TestModule)
+      CirctChiselStage.emitCHIRRTL(new TestModule)
     }
   }
 
@@ -174,21 +166,13 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
     }
 
     // Elaborate now wraps module construction in withFreshRegistry internally
-    val annos1 = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos1 = new Elaborate().transform(annos1)
-    val entries1 = resultAnnos1.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
+    val entries1 = getDebugEntries(() => new TestModule)
 
     // Verify entries exist in returned map
     entries1 should not be empty
 
     // Run again in separate registry - should be isolated
-    val annos2 = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos2 = new Elaborate().transform(annos2)
-    val entries2 = resultAnnos2.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
+    val entries2 = getDebugEntries(() => new TestModule)
 
     entries2 should not be empty
     // Isolation semantics: verify registry snapshots are independent
@@ -222,11 +206,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       topWire.instrumentDebug()
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TopModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
+    val registryEntries = getDebugEntries(() => new TopModule)
 
     val entries = registryEntries.toSeq
     // Should have 3 entries (one from each module level)
@@ -238,17 +218,13 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       // No signals, no instrumentation
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new EmptyModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
+    val registryEntries = getDebugEntries(() => new EmptyModule)
 
     registryEntries shouldBe empty
 
     // Should still emit CHIRRTL without errors
     noException should be thrownBy {
-      ChiselStage.emitCHIRRTL(new EmptyModule)
+      CirctChiselStage.emitCHIRRTL(new EmptyModule)
     }
   }
 
@@ -260,7 +236,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       reg.instrumentDebug()
     }
 
-    val chirrtlString = ChiselStage.emitCHIRRTL(new TestModule)
+    val chirrtlString = CirctChiselStage.emitCHIRRTL(new TestModule)
 
     // Verify debug variable intrinsic is present
     chirrtlString should include("intrinsic(circt_dbg_variable")
@@ -274,12 +250,11 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       }
     }
 
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    new Elaborate().transform(annos)
+    getDebugEntries(() => new TestModule)
 
     // Verify the module compiles without errors
     noException should be thrownBy {
-      ChiselStage.emitCHIRRTL(new TestModule)
+      CirctChiselStage.emitCHIRRTL(new TestModule)
     }
   }
 
@@ -290,7 +265,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       originalWire.instrumentDebug("renamed_debug")
     }
 
-    val chirrtlString = ChiselStage.emitCHIRRTL(new TestModule)
+    val chirrtlString = CirctChiselStage.emitCHIRRTL(new TestModule)
 
     // Verify the custom name appears in output
     chirrtlString should include("renamed_debug")
@@ -312,7 +287,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
       }
       io.out := w
     }
-    val chirrtl = ChiselStage.emitCHIRRTL(new TestModule)
+    val chirrtl = CirctChiselStage.emitCHIRRTL(new TestModule)
     chirrtl should include("intrinsic(circt_dbg_variable")
     (chirrtl should not).include("intrinsic(circt_dbg_placeholder")
   }
@@ -326,7 +301,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers {
         r
       }
     }
-    val chirrtl = ChiselStage.emitCHIRRTL(new TestModule)
+    val chirrtl = CirctChiselStage.emitCHIRRTL(new TestModule)
     val count = chirrtl.split(Pattern.quote("intrinsic(circt_dbg_variable")).length - 1
     count shouldBe 3
   }

@@ -12,7 +12,7 @@ import firrtl.{annoSeqToSeq, seqToAnnoSeq}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-class DebugRegistrySpec extends AnyFlatSpec with Matchers {
+class DebugRegistrySpec extends AnyFlatSpec with Matchers with DebugTestHelpers {
 
   "DebugRegistry" should "register debug entries" in {
 
@@ -22,13 +22,7 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers {
       a.instrumentDebug()
     }
 
-    // After the refactor, Elaborate wraps module construction in withFreshRegistry
-    // and returns DebugRegistryAnnotation with the entries
-    val annos = Seq(ChiselGeneratorAnnotation(() => new TestModule))
-    val resultAnnos = new Elaborate().transform(annos)
-    val registryEntries = resultAnnos.toSeq.collectFirst { case DebugRegistryAnnotation(entries) =>
-      entries
-    }.getOrElse(Map.empty)
+    val registryEntries = getDebugEntries(() => new TestModule)
 
     // Retrieve and verify the registry entries
     val entries = registryEntries.toSeq
@@ -75,10 +69,7 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers {
         a.instrumentDebug()
       }
 
-      val elaborated = new Elaborate().transform(Seq(ChiselGeneratorAnnotation(() => new TestModule)))
-
-      val registryEntries = elaborated.toSeq.collectFirst { case DebugRegistryAnnotation(e) => e }
-        .getOrElse(Map.empty)
+      val registryEntries = getDebugEntries(() => new TestModule)
 
       val (id, originalEntry) = registryEntries.head
 
@@ -121,10 +112,7 @@ class DebugRegistrySpec extends AnyFlatSpec with Matchers {
         a.instrumentDebug("testSignal")
       }
 
-      val elaborated = new Elaborate().transform(Seq(ChiselGeneratorAnnotation(() => new TestModule)))
-
-      val registryEntries = elaborated.toSeq.collectFirst { case DebugRegistryAnnotation(e) => e }
-        .getOrElse(Map.empty)
+      val registryEntries = getDebugEntries(() => new TestModule)
 
       val (id, originalEntry) = registryEntries.head
 
