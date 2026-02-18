@@ -145,7 +145,6 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers with DebugTestHelpers
       require(false, "elaboration failed on purpose") // throw after
     }
 
-    // Registry should be cleared in afterEach
     // Test that cleanup works even if module elaboration fails
     try {
       val annos = Seq(ChiselGeneratorAnnotation(() => new BrokenMod))
@@ -271,7 +270,7 @@ class DebugEdgeCasesSpec extends AnyFlatSpec with Matchers with DebugTestHelpers
     chirrtlString should include("renamed_debug")
   }
 
-  it should "handle debug inside else block (elsewhen)" in {
+  "Debug inside otherwise block" should "handle debug inside else block (elsewhen)" in {
     class TestModule extends Module {
       val io = IO(new Bundle {
         val sel = Input(Bool())

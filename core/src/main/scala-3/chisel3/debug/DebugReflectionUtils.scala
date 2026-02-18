@@ -43,24 +43,24 @@ object DebugReflectionUtils {
         val cleaned = name.split("\\[").head
         // Map Java primitive names and boxed types to Scala type names
         cleaned match {
-          case "int"                      => "Int"
-          case "Integer"                  => "Int"
-          case "boolean"                  => "Boolean"
-          case "Boolean"                  => "Boolean"
-          case "char"                     => "Char"
-          case "Character"                => "Char"
-          case "long"                     => "Long"
-          case "Long"                     => "Long"
-          case "float"                    => "Float"
-          case "Float"                    => "Float"
-          case "double"                   => "Double"
-          case "Double"                   => "Double"
-          case "byte"                     => "Byte"
-          case "Byte"                     => "Byte"
-          case "short"                    => "Short"
-          case "Short"                    => "Short"
-          case "void" | "Void" | "Void[]" => "Unit"
-          case other                      => other
+          case "int"           => "Int"
+          case "Integer"       => "Int"
+          case "boolean"       => "Boolean"
+          case "Boolean"       => "Boolean"
+          case "char"          => "Char"
+          case "Character"     => "Char"
+          case "long"          => "Long"
+          case "Long"          => "Long"
+          case "float"         => "Float"
+          case "Float"         => "Float"
+          case "double"        => "Double"
+          case "Double"        => "Double"
+          case "byte"          => "Byte"
+          case "Byte"          => "Byte"
+          case "short"         => "Short"
+          case "Short"         => "Short"
+          case "void" | "Void" => "Unit"
+          case other           => other
         }
       }
 
