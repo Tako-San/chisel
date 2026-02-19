@@ -13,26 +13,27 @@ package object debug {
     * automatically invoked circuit elaboration.
     */
   @nowarn("cat=deprecation")
-  def debug[T <: chisel3.Data](data: T, name: String = "")(implicit src: SourceInfo): T = {
+  def debug[T <: chisel3.Data](data: T, name: String = "", path: String = "")(implicit src: SourceInfo): T = {
     import chisel3.internal.Builder
     val sigName = if (name.isEmpty) data.instanceName else name
     // Note: path requires full hierarchy which may not be available during construction.
-    // CIRCT will construct the full path during FIRRTL conversion.
+    // CIRCT will construct the full path during FIRRTL conversion when path is empty.
+    val params = Seq(
+      "name" -> StringParam(sigName),
+      "type" -> StringParam(data.typeName)
+    ) ++ (if (path.nonEmpty) Seq("path" -> StringParam(path)) else Seq.empty)
     Builder.pushCommand(
       DefIntrinsic(
         src,
         "circt_dbg_variable",
         Seq.empty[Arg],
-        Seq(
-          "name" -> StringParam(sigName),
-          "type" -> StringParam(data.typeName)
-        )
+        params
       )
     )
     data
   }
 
   implicit class DataDebugOps[T <: chisel3.Data](private val data: T) extends AnyVal {
-    def instrumentDebug(name: String = "")(implicit src: SourceInfo): T = debug(data, name)
+    def instrumentDebug(name: String = "", path: String = "")(implicit src: SourceInfo): T = debug(data, name, path)
   }
 }
