@@ -64,7 +64,7 @@ private[chisel3] object AutoInstrumentDebugInfo {
 
   /** Recursively instrument a block */
   private def instrumentBlock(block: Block, moduleName: String): Unit = {
-    val commands = block.getCommands()
+    val commands = block.getCommands().toList
 
     commands.foreach {
       case DefWire(sourceInfo, dataId: chisel3.Data) =>
