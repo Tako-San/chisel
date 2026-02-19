@@ -16,6 +16,8 @@ package object debug {
   def debug[T <: chisel3.Data](data: T, name: String = "")(implicit src: SourceInfo): T = {
     import chisel3.internal.Builder
     val sigName = if (name.isEmpty) data.instanceName else name
+    // Note: path requires full hierarchy which may not be available during construction.
+    // CIRCT will construct the full path during FIRRTL conversion.
     Builder.pushCommand(
       DefIntrinsic(
         src,

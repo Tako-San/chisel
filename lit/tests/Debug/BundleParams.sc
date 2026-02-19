@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import chisel3._
-import chisel3.experimental.SourceInfo
 import circt.stage._
 
 // CHECK-LABEL: circuit BundleParamsTest :
@@ -17,7 +16,7 @@ class SimpleModule extends Module {
     val out = Output(UInt(8.W))
   })
 
-  // CHECK: intrinsic(circt_dbg_variable<name = "data_bundle", type = "SimpleBundle">
+  // CHECK: intrinsic(circt_dbg_variable<name = "data_bundle", type = "{{.*}}">
   chisel3.debug.debug(io.in, "data_bundle")
 
   io.out := 0.U

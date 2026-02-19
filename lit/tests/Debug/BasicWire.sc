@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import chisel3._
-import chisel3.experimental.SourceInfo
 import circt.stage._
 
 // CHECK-LABEL: circuit BasicWire :
@@ -12,6 +11,7 @@ class BasicWire extends Module {
     val out = Output(UInt(8.W))
   })
 
+  // Manual debug() call - only has name and type (no path from constructor)
   // CHECK: intrinsic(circt_dbg_variable<name = "in", type = "UInt<8>">
   chisel3.debug.debug(io.in, "in")
 

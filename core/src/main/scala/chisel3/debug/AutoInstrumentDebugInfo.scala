@@ -22,13 +22,14 @@ private[chisel3] object AutoInstrumentDebugInfo {
     typeName:   String,
     sourceInfo: SourceInfo
   ): Unit = {
-    val qualifiedName = s"$moduleName.$defName"
+    val qualifiedPath = s"$moduleName.$defName"
     val debugIntrinsic = DefIntrinsic(
       sourceInfo,
       "circt_dbg_variable",
       Seq.empty[Arg],
       Seq(
-        "name" -> StringParam(qualifiedName),
+        "name" -> StringParam(defName),
+        "path" -> StringParam(qualifiedPath),
         "type" -> StringParam(typeName)
       )
     )
@@ -45,13 +46,12 @@ private[chisel3] object AutoInstrumentDebugInfo {
   def apply(circuit: chisel3.internal.firrtl.ir.Circuit): Unit = {
     circuit.components.foreach {
       case DefModule(id, name, _, _, ports, block) =>
-        // Instrument all definitions in this module's block
-        instrumentBlock(block, name)
-
-        // Add debug for ports
+        // Instrument ports
         ports.foreach { port =>
           addDebugIntrinsic(block, name, port.id.instanceName, port.id.typeName, port.sourceInfo)
         }
+        // Instrument all definitions in this module's block (wire, reg, memory)
+        instrumentBlock(block, name)
 
       case _: DefBlackBox =>
       // Don't instrument black boxes

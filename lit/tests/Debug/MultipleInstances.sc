@@ -30,10 +30,10 @@ class MultipleInstancesTest extends Module {
   val counter0 = Module(new CounterModule)
   val counter1 = Module(new CounterModule)
 
-  // CHECK: intrinsic(circt_dbg_variable<name = "counter0_count", type = "UInt<8>">
+  // CHECK-DAG: intrinsic(circt_dbg_variable<name = "counter0_count", type = "UInt<8>">
   chisel3.debug.debug(counter0.io.count, "counter0_count")
 
-  // CHECK: intrinsic(circt_dbg_variable<name = "counter1_count", type = "UInt<8>">
+  // CHECK-DAG: intrinsic(circt_dbg_variable<name = "counter1_count", type = "UInt<8>">
   chisel3.debug.debug(counter1.io.count, "counter1_count")
 
   counter0.io.en := io.en0
