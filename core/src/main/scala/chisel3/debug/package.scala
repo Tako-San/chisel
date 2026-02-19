@@ -1,7 +1,8 @@
 package chisel3
 
 import chisel3.experimental.{SourceInfo, SourceLine}
-import chisel3.internal.firrtl.ir._
+import chisel3.internal.firrtl.ir.{DefIntrinsic, Arg}
+import scala.annotation.nowarn
 
 package object debug {
 
@@ -14,16 +15,16 @@ package object debug {
     import chisel3.internal.Builder
     val sigName = if (name.isEmpty) data.instanceName else name
     Builder.pushCommand(
-      DefIntrinsic(src, "circt_dbg_variable", Seq(
+      DefIntrinsic(src, "circt_dbg_variable", Seq.empty[Arg], Seq(
         "name" -> StringParam(sigName),
         "type" -> StringParam(data.typeName)
-        // path is resolved later by CIRCT lowering
       ))
     )
     data
   }
 
   implicit class DataDebugOps[T <: chisel3.Data](private val data: T) extends AnyVal {
+    @nowarn("cat=deprecation")
     def instrumentDebug(name: String = "")(implicit src: SourceInfo): T = debug(data, name)
   }
 }

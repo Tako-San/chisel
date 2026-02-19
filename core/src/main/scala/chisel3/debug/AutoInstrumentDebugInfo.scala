@@ -4,9 +4,7 @@ package chisel3.debug
 
 import chisel3.experimental.{SourceInfo, UnlocatableSourceInfo}
 import chisel3.internal.Builder
-import chisel3.internal.firrtl.ir._
-import chisel3.{StringParam}
-
+import chisel3.internal.firrtl.ir.{DefIntrinsic, Arg}
 import firrtl.ir._
 
 /** Automatically instruments all signals after Builder.build() with debug information.
@@ -29,11 +27,15 @@ private[chisel3] object AutoInstrumentDebugInfo {
 
   /** Instrument a single module by traversing its statements.
     *
-    * @param module The module to instrument
+    * @param module The module to instrument (only firrtl.ir.Module has a body)
     */
   private def instrumentModule(module: firrtl.ir.DefModule): Unit = {
-    module.body.foreach { stmt =>
-      instrumentStatement(stmt, Seq.empty)
+    module match {
+      case m: firrtl.ir.Module =>
+        handleStatement(m.body, Seq.empty)
+      case _ =>
+        // Skip other DefModule types (like ExtModule) that don't have a body
+        ()
     }
   }
 
@@ -49,18 +51,15 @@ private[chisel3] object AutoInstrumentDebugInfo {
     case firrtl.ir.DefRegister(_, name, tpe, _) =>
       emitDebugIntrinsic(name, path, tpe)
 
-    case firrtl.ir.DefRegisterWithReset(_, name, tpe, _, _, _) =>
-      emitDebugIntrinsic(name, path, tpe)
+    case firrtl.ir.DefNode(_, name, expr) =>
+      emitDebugIntrinsic(name, path, expr.tpe)
 
-    case firrtl.ir.DefNode(_, name, value) =>
-      emitDebugIntrinsic(name, path, value.tpe)
-
-    case firrtl.ir.DefMemory(_, name, _, tpe, _, _, _, _, _, _, _) =>
+    case firrtl.ir.DefMemory(_, name, tpe, _, _, _, _, _, _, _) =>
       emitDebugIntrinsic(name, path, tpe)
 
     case firrtl.ir.Conditionally(_, _, conseq, alt) =>
-      instrumentBlock(conseq, path)
-      instrumentBlock(alt, path)
+      handleStatement(conseq, path)
+      handleStatement(alt, path)
 
     case block: firrtl.ir.Block =>
       instrumentBlock(block, path)
@@ -81,6 +80,15 @@ private[chisel3] object AutoInstrumentDebugInfo {
     }
   }
 
+  /** Handle a statement that may or may not be a Block.
+    */
+  private def handleStatement(stmt: Statement, path: Seq[String]): Unit = {
+    stmt match {
+      case block: firrtl.ir.Block => instrumentBlock(block, path)
+      case _ => instrumentStatement(stmt, path)
+    }
+  }
+
   /** Emit a debug intrinsic for a signal.
     *
     * @param name The name of the signal
@@ -91,10 +99,11 @@ private[chisel3] object AutoInstrumentDebugInfo {
     implicit val sourceInfo: SourceInfo = UnlocatableSourceInfo
 
     val fullName = if (path.isEmpty) name else path.mkString(".") + "." + name
+    val typeStr = firrtl.ir.Serializer.serialize(tpe)
 
     val params = Seq(
-      "name" -> StringParam(fullName),
-      "type" -> StringParam(tpe.serialize)
+      "name" -> chisel3.StringParam(fullName),
+      "type" -> chisel3.StringParam(typeStr)
     )
 
     chisel3.internal.Builder.pushCommand(
