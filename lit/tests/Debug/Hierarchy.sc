@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import chisel3._
-import chisel3.experimental.SourceInfo
 import circt.stage._
 
 // CHECK-LABEL: circuit HierarchyTest :
@@ -12,8 +11,7 @@ class InnerModule extends Module {
     val out = Output(UInt(8.W))
   })
 
-  // CHECK: intrinsic(circt_dbg_variable
-  // CHECK-SAME: path = "HierarchyTest.inner.innerData"
+  // CHECK: intrinsic(circt_dbg_variable<name = "inner_data", type = "UInt<8>">
   val innerData = Wire(UInt(8.W)).suggestName("innerData")
   chisel3.debug.debug(innerData, "inner_data")
 
@@ -27,8 +25,7 @@ class HierarchyTest extends Module {
     val out = Output(UInt(8.W))
   })
 
-  // CHECK: intrinsic(circt_dbg_variable
-  // CHECK-SAME: path = "HierarchyTest.io.in"
+  // CHECK: intrinsic(circt_dbg_variable<name = "top_port", type = "UInt<8>">
   chisel3.debug.debug(io.in, "top_port")
 
   val inner = Module(new InnerModule)

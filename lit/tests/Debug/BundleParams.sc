@@ -17,8 +17,7 @@ class SimpleModule extends Module {
     val out = Output(UInt(8.W))
   })
 
-  // CHECK: intrinsic(circt_dbg_variable
-  // CHECK-SAME: params =
+  // CHECK: intrinsic(circt_dbg_variable<name = "data_bundle", type = "SimpleBundle">
   chisel3.debug.debug(io.in, "data_bundle")
 
   io.out := 0.U

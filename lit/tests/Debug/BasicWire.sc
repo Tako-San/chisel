@@ -12,8 +12,7 @@ class BasicWire extends Module {
     val out = Output(UInt(8.W))
   })
 
-  // CHECK: intrinsic(circt_dbg_variable
-  // CHECK-SAME: path = "BasicWire.io.in"
+  // CHECK: intrinsic(circt_dbg_variable<name = "in", type = "UInt<8>">
   chisel3.debug.debug(io.in, "in")
 
   io.out := io.in + 1.U

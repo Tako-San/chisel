@@ -11,9 +11,7 @@ class DebugNameTest extends Module {
     val out = Output(UInt(8.W))
   })
 
-  // CHECK: intrinsic(circt_dbg_variable
-  // CHECK-SAME: name = "my_custom_name"
-  // CHECK-SAME: path = "DebugNameTest.io.in"
+  // CHECK: intrinsic(circt_dbg_variable<name = "my_custom_name", type = "UInt<8>">
   chisel3.debug.debug(io.in, "my_custom_name")
 
   io.out := io.in
