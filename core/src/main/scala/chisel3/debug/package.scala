@@ -10,7 +10,21 @@ package object debug {
     * Emits `circt_dbg_variable` directly – no placeholder, no registry.
     *
     * For full-design instrumentation, use `AutoInstrumentDebugInfo` which is
-    * automatically invoked circuit elaboration.
+    * automatically invoked during circuit elaboration.
+    *
+    * @param data The Chisel data signal to instrument for debugging
+    * @param name The local signal name. If empty, defaults to the signal's instance name
+    * @param path A partial hierarchical path for the signal. The full hierarchical path
+    *             will be constructed by CIRCT/HGDB during FIRRTL conversion.
+    *
+    *             @note The `path` parameter currently contains only a simple qualified name
+    *             (e.g., "ModuleName.signalName") rather than the full hierarchical path through
+    *             all parent modules. CIRCT/HGDB will expand this to the complete hierarchical
+    *             path based on the module instance hierarchy.
+    *
+    *             The `name` and `path` parameters serve different purposes:
+    *             - `name`: Local identifier for the signal within its immediate module
+    *             - `path`: Hierarchical identifier that will be expanded to the full instance path
     */
   @nowarn("cat=deprecation")
   def debug[T <: chisel3.Data](data: T, name: String = "", path: String = "")(implicit src: SourceInfo): T = {

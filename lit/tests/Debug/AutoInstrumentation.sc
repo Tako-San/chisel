@@ -24,9 +24,9 @@ class AutoInstrument extends Module {
 }
 
 // AutoInstrumentDebugInfo adds circt_dbg_variable intrinsics for all signals:
-// CHECK-DAG: intrinsic(circt_dbg_variable
-// CHECK-DAG: intrinsic(circt_dbg_variable
-// CHECK-DAG: intrinsic(circt_dbg_variable
-// CHECK-DAG: intrinsic(circt_dbg_variable
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "wire", type = "UInt<8>"
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "reg", type = "UInt<8>"
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "in", type = "UInt<8>"
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "out", type = "UInt<8>"
 
 println(circt.stage.ChiselStage.emitCHIRRTL(new AutoInstrument))
