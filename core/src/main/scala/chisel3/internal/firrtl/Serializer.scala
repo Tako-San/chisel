@@ -10,7 +10,6 @@ import chisel3.experimental.{
   NoSourceInfo,
   SourceInfo,
   SourceLine,
-  StringParam => ExpStringParam,
   UnlocatableSourceInfo
 }
 import chisel3.properties.Property
