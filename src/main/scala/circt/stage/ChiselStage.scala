@@ -4,7 +4,6 @@ package circt.stage
 
 import chisel3.{ElaboratedCircuit, RawModule}
 import chisel3.stage.{ChiselCircuitAnnotation, ChiselGeneratorAnnotation, CircuitSerializationAnnotation}
-import chisel3.stage.phases.CollectDebugInfo
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq, EmittedVerilogCircuitAnnotation}
 import firrtl.options.{CustomFileEmission, Dependency, Phase, PhaseManager, Stage, StageMain, Unserializable}
 import firrtl.stage.FirrtlCircuitAnnotation
@@ -55,7 +54,6 @@ object ChiselStage {
   private def phase = new PhaseManager(
     Seq(
       Dependency[chisel3.stage.phases.Elaborate],
-      Dependency[chisel3.stage.phases.CollectDebugInfo],
       Dependency[chisel3.stage.phases.Convert],
       Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
       Dependency[circt.stage.phases.AddImplicitOutputFile],

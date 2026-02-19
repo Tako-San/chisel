@@ -15,7 +15,7 @@ import chisel3.stage.{
   DesignAnnotation,
   ThrowOnFirstErrorAnnotation
 }
-import chisel3.debug.{AutoInstrumentDebugInfo, DebugRegistry, DebugRegistryAnnotation}
+import chisel3.debug.AutoInstrumentDebugInfo
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq}
 import firrtl.options.{Dependency, Phase}
 import firrtl.options.Viewer.view
