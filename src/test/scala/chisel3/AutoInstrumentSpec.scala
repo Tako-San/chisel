@@ -60,7 +60,7 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.dout := mem(io.addr)
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("mem")
+    chirrtl should include("""name = "mem"""")
   }
 
   it should "emit circt_dbg_variable with correct path parameter" in {
