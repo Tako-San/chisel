@@ -49,6 +49,17 @@ private[chisel3] object AutoInstrumentDebugInfo {
     block.addSecretCommand(debugIntrinsic)
   }
 
+  /** Extract the instance name from a Chisel ID, handling Data, BaseModule, and HasId types.
+    *
+    * This ensures consistent name extraction for different types of memory IDs.
+    */
+  private def extractInstanceName(id: Any): String = id match {
+    case data: chisel3.Data                    => data.instanceName
+    case m:    chisel3.experimental.BaseModule => m.instanceName
+    case h:    chisel3.internal.HasId          => h.instanceName
+    case _ => id.toString
+  }
+
   /** Apply automatic instrumentation to a Chisel internal circuit.
     *
     * Traverses all modules in the circuit and adds circt_dbg_variable intrinsics
@@ -87,21 +98,10 @@ private[chisel3] object AutoInstrumentDebugInfo {
       case DefRegInit(sourceInfo, dataId: chisel3.Data, _, _, _) =>
         addDebugIntrinsic(block, moduleName, dataId.instanceName, dataId.typeName, sourceInfo)
       case DefMemory(sourceInfo, memId, memType, _) =>
-        val memName = memId match {
-          case data: chisel3.Data => data.instanceName
-          case _ => memId.toString
-        }
+        val memName = extractInstanceName(memId)
         addDebugIntrinsic(block, moduleName, memName, memType.typeName, sourceInfo)
       case DefSeqMemory(sourceInfo, memId, memType, _, _) =>
-        val memName = memId match {
-          case data: chisel3.Data => data.instanceName
-          case _ =>
-            memId match {
-              case m: chisel3.experimental.BaseModule => m.instanceName
-              case h: chisel3.internal.HasId          => h.instanceName
-              case _ => memId.toString
-            }
-        }
+        val memName = extractInstanceName(memId)
         addDebugIntrinsic(block, moduleName, memName, memType.typeName, sourceInfo)
       case when: When =>
         // Recursively instrument when blocks

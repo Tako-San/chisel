@@ -88,10 +88,7 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.dout := mem.read(io.addr)
     })
     chirrtl should include("circt_dbg_variable")
-    // SyncReadMem generates names like "chisel3.SyncReadMem@hash"
-    // so check for the intrinsic and the memory in the smem declaration
-    chirrtl should include("smem")
-    chirrtl should include("circt_dbg_variable")
+    chirrtl should include("""name = "mem"""")
   }
 
   it should "emit circt_dbg_variable for RegInit" in {
