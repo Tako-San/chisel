@@ -11,7 +11,7 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
   "AutoInstrumentDebugInfo" should "emit circt_dbg_variable for wires" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(UInt(8.W))
+        val in = Input(UInt(8.W))
         val out = Output(UInt(8.W))
       })
       val w = Wire(UInt(8.W))
@@ -19,13 +19,13 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := w
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"w\"")
+    chirrtl should include("""name = "w"""")
   }
 
   it should "emit circt_dbg_variable for registers" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(UInt(8.W))
+        val in = Input(UInt(8.W))
         val out = Output(UInt(8.W))
       })
       val r = RegInit(0.U(8.W))
@@ -33,13 +33,13 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := r
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"r\"")
+    chirrtl should include("""name = "r"""")
   }
 
   it should "emit circt_dbg_variable for ports" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(UInt(8.W))
+        val in = Input(UInt(8.W))
         val out = Output(UInt(8.W))
       })
       val w = Wire(UInt(8.W))
@@ -47,7 +47,7 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := w
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"io\"")
+    chirrtl should include("""name = "io"""")
   }
 
   it should "emit circt_dbg_variable for memories" in {
@@ -66,7 +66,7 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
   it should "emit circt_dbg_variable with correct path parameter" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(UInt(8.W))
+        val in = Input(UInt(8.W))
         val out = Output(UInt(8.W))
       })
       val w = Wire(UInt(8.W))
@@ -97,7 +97,7 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
   it should "emit circt_dbg_variable for RegInit" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(UInt(8.W))
+        val in = Input(UInt(8.W))
         val out = Output(UInt(8.W))
       })
       val r = RegInit(42.U(8.W))
@@ -105,13 +105,13 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := r
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"r\"")
+    chirrtl should include("""name = "r"""")
   }
 
   it should "emit circt_dbg_variable for multiple wires" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(UInt(8.W))
+        val in = Input(UInt(8.W))
         val out = Output(UInt(8.W))
       })
       val w1 = Wire(UInt(8.W))
@@ -123,15 +123,15 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := w3
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"w1\"")
-    chirrtl should include("\"w2\"")
-    chirrtl should include("\"w3\"")
+    chirrtl should include("""name = "w1"""")
+    chirrtl should include("""name = "w2"""")
+    chirrtl should include("""name = "w3"""")
   }
 
   it should "emit circt_dbg_variable for multiple registers" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(UInt(8.W))
+        val in = Input(UInt(8.W))
         val out = Output(UInt(8.W))
       })
       val r1 = RegInit(0.U(8.W))
@@ -141,14 +141,14 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := r2
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"r1\"")
-    chirrtl should include("\"r2\"")
+    chirrtl should include("""name = "r1"""")
+    chirrtl should include("""name = "r2"""")
   }
 
   it should "emit circt_dbg_variable for Bundle ports" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(new Bundle {
+        val in = Input(new Bundle {
           val a = UInt(4.W)
           val b = UInt(4.W)
         })
@@ -159,13 +159,13 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := w
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"io\"")
+    chirrtl should include("""name = "io"""")
   }
 
   it should "emit circt_dbg_variable for Vec ports" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(Vec(4, UInt(8.W)))
+        val in = Input(Vec(4, UInt(8.W)))
         val out = Output(UInt(8.W))
       })
       val w = Wire(UInt(8.W))
@@ -173,13 +173,13 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := w
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"io\"")
+    chirrtl should include("""name = "io"""")
   }
 
   it should "emit circt_dbg_variable for SInt types" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(SInt(8.W))
+        val in = Input(SInt(8.W))
         val out = Output(SInt(8.W))
       })
       val w = Wire(SInt(8.W))
@@ -187,14 +187,14 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := w
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"w\"")
+    chirrtl should include("""name = "w"""")
     chirrtl should include("SInt<8>")
   }
 
   it should "emit circt_dbg_variable for Bool types" in {
     val chirrtl = ChiselStage.emitCHIRRTL(new Module {
       val io = IO(new Bundle {
-        val in  = Input(Bool())
+        val in = Input(Bool())
         val out = Output(Bool())
       })
       val w = Wire(Bool())
@@ -202,7 +202,7 @@ class AutoInstrumentSpec extends AnyFlatSpec with Matchers {
       io.out := w
     })
     chirrtl should include("circt_dbg_variable")
-    chirrtl should include("\"w\"")
+    chirrtl should include("""name = "w"""")
     chirrtl should include("UInt<1>")
   }
 }

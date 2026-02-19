@@ -95,7 +95,12 @@ private[chisel3] object AutoInstrumentDebugInfo {
       case DefSeqMemory(sourceInfo, memId, memType, _, _) =>
         val memName = memId match {
           case data: chisel3.Data => data.instanceName
-          case _ => memId.toString
+          case _ =>
+            memId match {
+              case m: chisel3.experimental.BaseModule => m.instanceName
+              case h: chisel3.internal.HasId          => h.instanceName
+              case _ => memId.toString
+            }
         }
         addDebugIntrinsic(block, moduleName, memName, memType.typeName, sourceInfo)
       case when: When =>
