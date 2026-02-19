@@ -25,7 +25,3 @@ metals.sbt
 version.txt
 latest-version.txt
 .bsp
-# Mill build artifacts
-mill
-.mill-version
-mill-build/

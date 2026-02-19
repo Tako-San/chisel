@@ -44,7 +44,6 @@ class ChiselStage extends Stage {
         Dependency[firrtl.stage.phases.Checks]
       )
     )
-
     pm.transform(annotations)
   }
 
@@ -203,7 +202,6 @@ object ChiselStage {
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.SystemVerilog)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
-
     phase
       .transform(annos)
       .collectFirst { case EmittedVerilogCircuitAnnotation(a) =>
@@ -246,7 +244,6 @@ object ChiselStage {
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.Btor2)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
-
     phase
       .transform(annos)
       .collectFirst { case EmittedBtor2CircuitAnnotation(a) =>
