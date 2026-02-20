@@ -8,7 +8,7 @@ import chisel3._
 // CHECK-NEXT: input clock : Clock
 // CHECK-NEXT: input reset : UInt<1>
 // CHECK-NEXT: output io : { flip in : UInt<8>[4], out : UInt<8>}
-// CHECK-DAG: intrinsic(circt_dbg_variable<name = "vec_wire", type = "Vec4_UInt<8>"
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "vec_wire", type = "Vec4_UInt<8>">, vec_wire)
 class VectorsDebug extends Module {
   val io = IO(new Bundle {
     val in = Input(Vec(4, UInt(8.W)))

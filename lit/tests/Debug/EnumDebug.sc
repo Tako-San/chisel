@@ -11,11 +11,11 @@ object State extends ChiselEnum {
 // CHECK-LABEL: circuit EnumDebug :
 // CHECK: public module EnumDebug :
 // CHECK-DAG: intrinsic(circt_dbg_variable<name = "state",
-// CHECK-SAME: chiselType = "State(Idle=0, Busy=1, Done=2)"
+// CHECK-SAME: chiselType = "State(Idle=0, Busy=1, Done=2)">, state)
 class EnumDebug extends Module {
   val io = IO(new Bundle {
     val start = Input(Bool())
-    val out   = Output(State())
+    val out = Output(State())
   })
 
   val state = RegInit(State.Idle)

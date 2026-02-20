@@ -2,7 +2,8 @@
 package chisel3
 
 import chisel3.experimental.{SourceInfo, StringParam}
-import chisel3.internal.firrtl.ir.{Arg, DefIntrinsic}
+import chisel3.internal.{Builder, HasId}
+import chisel3.internal.firrtl.ir.{Arg, DefIntrinsic, Node}
 import scala.annotation.nowarn
 
 /** Debug instrumentation API for Chisel signals.
@@ -43,11 +44,11 @@ package object debug {
     implicit src: SourceInfo
   ): T = {
     val sigName = if (name.isEmpty) data.instanceName else name
-    chisel3.internal.Builder.pushCommand(
+    Builder.pushCommand(
       DefIntrinsic(
         src,
         "circt_dbg_variable",
-        Seq.empty[Arg],
+        Seq(Node(data)),
         Seq(
           "name" -> StringParam(sigName),
           "type" -> StringParam(data.typeName)

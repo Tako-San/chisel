@@ -13,7 +13,7 @@ class MyBundle extends Bundle {
 // CHECK-NEXT: input clock : Clock
 // CHECK-NEXT: input reset : UInt<1>
 // CHECK-NEXT: output io : { flip in : { a : UInt<8>, b : UInt<1>}, out : { a : UInt<8>, b : UInt<1>}}
-// CHECK-DAG: intrinsic(circt_dbg_variable<name = "bundle_wire", type = "MyBundle">
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "bundle_wire", type = "MyBundle">, bundle_wire)
 class BundlesDebug extends Module {
   val io = IO(new Bundle {
     val in = Input(new MyBundle)

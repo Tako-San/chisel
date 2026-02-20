@@ -355,4 +355,75 @@ class EmitDebugInfoSpec extends AnyFlatSpec with Matchers {
     // We do NOT expect enum variants inside a Bundle's port type string —
     // enum info is only emitted for local wires/regs that are EnumType.
   }
+
+  // ---------- Signal reference in intrinsic arguments ----------
+
+  it should "include signal reference in intrinsic for wire" in {
+    val chirrtl = emitWithDebug(new Module {
+      val io = IO(new Bundle {
+        val in = Input(UInt(8.W))
+        val out = Output(UInt(8.W))
+      })
+      val w = Wire(UInt(8.W))
+      w := io.in
+      io.out := w
+    })
+    // Verify the intrinsic includes the signal reference as an argument
+    chirrtl should include("""intrinsic(circt_dbg_variable<name = "w", type = "UInt<8>">, w)""")
+  }
+
+  it should "include signal reference in intrinsic for port" in {
+    val chirrtl = emitWithDebug(new Module {
+      val io = IO(new Bundle {
+        val in = Input(UInt(8.W))
+        val out = Output(UInt(8.W))
+      })
+      io.out := io.in
+    })
+    // Verify the intrinsic includes the port reference as an argument
+    chirrtl should include("""intrinsic(circt_dbg_variable<name = "io", type = ".*">, io)""")
+  }
+
+  it should "include signal reference in intrinsic for memory" in {
+    val chirrtl = emitWithDebug(new Module {
+      val io = IO(new Bundle {
+        val addr = Input(UInt(4.W))
+        val out = Output(UInt(8.W))
+      })
+      val mem = Mem(16, UInt(8.W))
+      io.out := mem(io.addr)
+    })
+    // Verify the intrinsic includes the memory reference as an argument
+    chirrtl should include("""intrinsic(circt_dbg_variable<name = "mem", type = ".*">, mem)""")
+  }
+
+  it should "include signal reference in debug() API call" in {
+    val chirrtl = emitWithoutDebug(new Module {
+      import chisel3.debug._
+      val io = IO(new Bundle {
+        val out = Output(UInt(8.W))
+      })
+      val w = Wire(UInt(8.W))
+      w := 0.U
+      io.out := w
+      debug(w, "my_w")
+    })
+    // Verify the debug() API intrinsic includes the signal reference
+    chirrtl should include("""intrinsic(circt_dbg_variable<name = "my_w", type = "UInt<8>">, my_w)""")
+  }
+
+  it should "include signal reference in .instrumentDebug() extension method" in {
+    val chirrtl = emitWithoutDebug(new Module {
+      import chisel3.debug._
+      val io = IO(new Bundle {
+        val out = Output(UInt(8.W))
+      })
+      val w = Wire(UInt(8.W))
+      w := 0.U
+      io.out := w
+      w.instrumentDebug("ext_w")
+    })
+    // Verify the .instrumentDebug() intrinsic includes the signal reference
+    chirrtl should include("""intrinsic(circt_dbg_variable<name = "ext_w", type = "UInt<8>">, ext_w)""")
+  }
 }

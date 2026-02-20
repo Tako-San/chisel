@@ -8,7 +8,7 @@ import chisel3._
 // CHECK-NEXT: input clock : Clock
 // CHECK-NEXT: input reset : UInt<1>
 // CHECK-NEXT: output io : { flip a : UInt<8>, flip b : UInt<8>, c : UInt<8>}
-// CHECK-DAG: intrinsic(circt_dbg_variable<name = "debug_signal", type = "UInt<8>">
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "debug_signal", type = "UInt<8>">, debug_signal)
 class BasicDebug extends Module {
   val io = IO(new Bundle {
     val a = Input(UInt(8.W))

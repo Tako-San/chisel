@@ -8,8 +8,8 @@ import chisel3._
 // CHECK-NEXT: input clock : Clock
 // CHECK-NEXT: input reset : UInt<1>
 // CHECK-NEXT: output io : { flip in : UInt<8>, out : UInt<8>}
-// CHECK-DAG: intrinsic(circt_dbg_variable<name = "my_reg", type = "UInt<8>">
-// CHECK-DAG: intrinsic(circt_dbg_variable<name = "my_wire", type = "UInt<8>">
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "my_reg", type = "UInt<8>">, my_reg)
+// CHECK-DAG: intrinsic(circt_dbg_variable<name = "my_wire", type = "UInt<8>">, my_wire)
 class RegistersDebug extends Module {
   val io = IO(new Bundle {
     val in = Input(UInt(8.W))
