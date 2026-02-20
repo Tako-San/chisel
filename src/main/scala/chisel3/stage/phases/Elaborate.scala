@@ -15,6 +15,7 @@ import chisel3.stage.{
   DesignAnnotation,
   ThrowOnFirstErrorAnnotation
 }
+import circt.stage.EmitDebugTypeInfoAnnotation
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq}
 import firrtl.options.{Dependency, Phase}
 import firrtl.options.Viewer.view
@@ -61,7 +62,10 @@ class Elaborate extends Phase {
             elaborationTrace
           )
         val (elaboratedCircuit, dut) = {
-          Builder.build(Module(gen()), context)
+          val enableDebugTypes = annotations.exists(_.isInstanceOf[EmitDebugTypeInfoAnnotation.type])
+          Builder.debugTypeEmitterEnabled.withValue(enableDebugTypes) {
+            Builder.build(Module(gen()), context)
+          }
         }
         elaborationTrace.finish()
 

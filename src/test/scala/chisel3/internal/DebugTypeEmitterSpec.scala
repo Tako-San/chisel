@@ -44,9 +44,7 @@ class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
   // ── Helper ──
 
   private def emitWithDebug(gen: => RawModule): String = {
-    Builder.debugTypeEmitterEnabled.withValue(true) {
-      circt.stage.ChiselStage.emitCHIRRTL(gen)
-    }
+    circt.stage.ChiselStage.emitCHIRRTL(gen, args = Array("--emit-debug-type-info"))
   }
 
   // ── Tests ──
@@ -83,5 +81,13 @@ class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
   it should "NOT emit intrinsics when disabled" in {
     val chirrtl = circt.stage.ChiselStage.emitCHIRRTL(new SimpleModule)
     (chirrtl should not).include("circt_debug_typetag")
+  }
+
+  it should "enable debug types via --emit-debug-type-info CLI arg" in {
+    val chirrtl = circt.stage.ChiselStage.emitCHIRRTL(
+      new SimpleModule,
+      args = Array("--emit-debug-type-info")
+    )
+    chirrtl should include("circt_debug_typetag")
   }
 }

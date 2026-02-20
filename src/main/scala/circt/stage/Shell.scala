@@ -65,7 +65,8 @@ trait CLI extends BareShell { this: BareShell =>
     PreserveAggregate,
     SplitVerilog,
     FirtoolBinaryPath,
-    FirtoolOption
+    FirtoolOption,
+    EmitDebugTypeInfoAnnotation
   ).foreach(_.addOptions(parser))
 }
 

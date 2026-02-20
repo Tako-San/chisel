@@ -168,3 +168,18 @@ private[circt] case object DumpFir extends NoTargetAnnotation with CIRCTOption w
   )
 
 }
+
+/** Enables emission of circt_debug_typetag intrinsics during elaboration.
+  *
+  * These intrinsics embed Chisel-level type metadata as JSON in FIRRTL output,
+  * consumed downstream by Tywaves, HGDB, and hw-debug-info.json export passes.
+  */
+case object EmitDebugTypeInfoAnnotation extends NoTargetAnnotation with CIRCTOption with HasShellOptions {
+  override def options = Seq(
+    new ShellOption[Unit](
+      longOption = "emit-debug-type-info",
+      toAnnotationSeq = _ => Seq(EmitDebugTypeInfoAnnotation),
+      helpText = "Emit circt_debug_typetag intrinsics with Chisel type metadata in FIRRTL output"
+    )
+  )
+}
