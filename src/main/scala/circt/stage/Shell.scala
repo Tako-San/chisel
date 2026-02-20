@@ -7,7 +7,6 @@ import chisel3.stage.{
   ChiselGeneratorAnnotation,
   ChiselOutputFileAnnotation,
   CircuitSerializationAnnotation,
-  EmitDebugInfoAnnotation,
   IncludeInlineTestsForModule,
   IncludeInlineTestsWithName,
   IncludeUtilMetadata,
@@ -57,8 +56,7 @@ trait CLI extends BareShell { this: BareShell =>
     UseSRAMBlackbox,
     IncludeInlineTestsForModule,
     IncludeInlineTestsWithName,
-    SuppressSourceInfoAnnotation,
-    EmitDebugInfoAnnotation
+    SuppressSourceInfoAnnotation
   ).foreach(_.addOptions(parser))
 
   parser.note("CIRCT (MLIR FIRRTL Compiler) options")
