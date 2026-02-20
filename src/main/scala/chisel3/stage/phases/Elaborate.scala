@@ -15,7 +15,6 @@ import chisel3.stage.{
   DesignAnnotation,
   ThrowOnFirstErrorAnnotation
 }
-import chisel3.debug.AutoInstrumentDebugInfo
 import firrtl.{annoSeqToSeq, seqToAnnoSeq, AnnotationSeq}
 import firrtl.options.{Dependency, Phase}
 import firrtl.options.Viewer.view
@@ -61,8 +60,9 @@ class Elaborate extends Phase {
             false,
             elaborationTrace
           )
-        val (elaboratedCircuit, dut) = Builder.build(Module(gen()), context)
-        AutoInstrumentDebugInfo(elaboratedCircuit._circuit)
+        val (elaboratedCircuit, dut) = {
+          Builder.build(Module(gen()), context)
+        }
         elaborationTrace.finish()
 
         // Extract the Chisel layers from a circuit via an in-order walk.

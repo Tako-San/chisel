@@ -437,14 +437,15 @@ private[chisel3] object Serializer {
     implicit indent:    Int,
     suppressSourceInfo: Boolean
   ): Iterator[String] = {
-    val allCommands = block.getAllCommands()
-    if (allCommands.isEmpty) {
+    val commands = block.getCommands()
+    val secretCommands = block.getSecretCommands()
+    if (commands.isEmpty && secretCommands.isEmpty) {
       implicit val b = new StringBuilder
       doIndent(); b ++= "skip"
       newLineNoIndent()
       return Iterator(b.toString)
     } else {
-      Iterator.empty[String] ++ allCommands.iterator.flatMap(c =>
+      Iterator.empty[String] ++ (commands.iterator ++ secretCommands).flatMap(c =>
         serializeCommand(c, ctx, typeAliases)(indent, suppressSourceInfo)
       )
     }
