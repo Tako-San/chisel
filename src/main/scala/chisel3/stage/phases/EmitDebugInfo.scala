@@ -37,10 +37,10 @@ class EmitDebugInfo extends Phase {
     if (!annotations.contains(EmitDebugInfoAnnotation)) return annotations
 
     // Find and instrument Chisel circuit with debug intrinsics
-    val circuitAnnotation = annotations.find(_.getClass.getName == "chisel3.stage.ChiselCircuitAnnotation")
-    if (circuitAnnotation.isDefined) {
-      val elaborated = circuitAnnotation.get.asInstanceOf[chisel3.stage.ChiselCircuitAnnotation].elaboratedCircuit
-      instrumentCircuit(elaborated._circuit)
+    annotations.collectFirst { case a: ChiselCircuitAnnotation =>
+      a
+    }.foreach { a =>
+      instrumentCircuit(a.elaboratedCircuit._circuit)
     }
 
     annotations
