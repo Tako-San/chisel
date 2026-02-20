@@ -615,6 +615,38 @@ private[chisel3] object Builder extends LazyLogging {
   def unnamedViews:  ArrayBuffer[Data] = dynamicContext.unnamedViews
   def viewNamespace: Namespace = chiselContext.get.viewNamespace
 
+  /** Compile-time debug type info, collected by compiler plugin. */
+  case class DebugTypeRecord(
+    className:  String,
+    params:     String,
+    sourceFile: String,
+    sourceLine: Int
+  )
+
+  // Side-table: HasId._id → debug type info. Uses DynamicVariable
+  // consistent with all other Builder state (currentModule, etc.)
+  private[chisel3] val debugTypeInfo = new DynamicVariable(
+    new mutable.HashMap[Long, DebugTypeRecord]()
+  )
+
+  /** Called by compiler-plugin-injected code to record compile-time type info. */
+  private[chisel3] def recordDebugType(
+    target:     HasId,
+    className:  String,
+    params:     String,
+    sourceFile: String,
+    sourceLine: Int
+  ): Unit = {
+    debugTypeInfo.value(target._id) = DebugTypeRecord(className, params, sourceFile, sourceLine)
+  }
+
+  /** Retrieve compile-time debug info for a HasId, if available. */
+  private[chisel3] def getDebugType(target: HasId): Option[DebugTypeRecord] =
+    debugTypeInfo.value.get(target._id)
+
+  /** Master switch for debug type emission. */
+  private[chisel3] val debugTypeEmitterEnabled = new DynamicVariable[Boolean](false)
+
   // Puts a prefix string onto the prefix stack
   def pushPrefix(d: String): Unit = {
     val context = chiselContext.get()
