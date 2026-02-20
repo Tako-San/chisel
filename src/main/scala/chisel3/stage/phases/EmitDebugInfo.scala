@@ -3,6 +3,7 @@ package chisel3.stage.phases
 
 import chisel3.stage.{ChiselCircuitAnnotation, EmitDebugInfoAnnotation}
 import chisel3.experimental.StringParam
+import chisel3.EnumType
 import chisel3.internal.firrtl.ir._
 import firrtl.{annoSeqToSeq, AnnotationSeq}
 import firrtl.options.{Dependency, Phase}
@@ -125,14 +126,29 @@ class EmitDebugInfo extends Phase {
     * where FIRRTL type is sufficient (UInt, SInt, Clock, etc.).
     */
   private def chiselTypeName(data: chisel3.Data): String = data match {
+    case e: EnumType       => serializeEnum(e)
     case _: chisel3.UInt   => ""
     case _: chisel3.SInt   => ""
     case _: chisel3.Clock  => ""
-    case _: chisel3.Reset  => ""
+    case _: chisel3.Reset  => "" // AsyncReset is a subtype of Reset, covered here
     case b: chisel3.Record => b.className
     case v: chisel3.Vec[_] =>
       s"Vec<${v.sample_element.typeName}>[${v.length}]"
     case _ => ""
+  }
+
+  // --------------- Enum serialization ---------------
+
+  /** Serialize a ChiselEnum type into a compact string with all variant mappings.
+    *
+    * Output format: `State(Idle=0, Busy=1, Done=2)`
+    */
+  private def serializeEnum(e: EnumType): String = {
+    val factory = e.factory
+    val variants = factory.all.zip(factory.allNames).map { case (v, name) =>
+      s"$name=${v.litValue}"
+    }
+    s"${factory.getClass.getSimpleName.init}(${variants.mkString(", ")})"
   }
 
   private def nameOf(id: Any): String = id match {

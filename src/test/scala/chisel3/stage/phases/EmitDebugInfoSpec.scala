@@ -272,4 +272,87 @@ class EmitDebugInfoSpec extends AnyFlatSpec with Matchers {
     })
     chirrtl should include("""name = "ext_w"""")
   }
+
+  // ---------- Enum variant mapping ----------
+
+  // Define enum objects at class level to avoid scoping issues in lambda
+  object State extends chisel3.ChiselEnum {
+    val Idle, Busy, Done = Value
+  }
+
+  object Opcode extends chisel3.ChiselEnum {
+    val ADD = Value(0x00.U)
+    val SUB = Value(0x01.U)
+    val MUL = Value(0x10.U)
+    val DIV = Value(0x11.U)
+  }
+
+  object Color extends chisel3.ChiselEnum {
+    val Red, Green, Blue = Value
+  }
+
+  object Cmd extends chisel3.ChiselEnum {
+    val Read, Write = Value
+  }
+
+  class ReqBundle extends Bundle {
+    val cmd = Cmd()
+    val addr = UInt(32.W)
+  }
+
+  "EmitDebugInfo" should "emit enum variant mapping for ChiselEnum" in {
+    val chirrtl = emitWithDebug(new Module {
+      val io = IO(new Bundle {
+        val out = Output(State())
+      })
+      val reg = RegInit(State.Idle)
+      io.out := reg
+    })
+    chirrtl should include("""chiselType = "State(Idle=0, Busy=1, Done=2)"""")
+  }
+
+  it should "handle non-sequential enum values" in {
+    val chirrtl = emitWithDebug(new Module {
+      val io = IO(new Bundle {
+        val out = Output(UInt(5.W))
+      })
+      val w = Wire(Opcode())
+      w := Opcode.MUL
+      io.out := w.asUInt
+    })
+    // Verify enum name present on the local wire
+    chirrtl should include("Opcode(")
+    // Verify non-sequential values
+    chirrtl should include("MUL=16")
+    chirrtl should include("DIV=17")
+  }
+
+  it should "handle enum used as wire type" in {
+    val chirrtl = emitWithDebug(new Module {
+      val io = IO(new Bundle {
+        val out = Output(UInt(2.W))
+      })
+      val w = Wire(Color())
+      w := Color.Red
+      io.out := w.asUInt
+    })
+    chirrtl should include("""name = "w"""")
+    chirrtl should include("Color(Red=0, Green=1, Blue=2)")
+  }
+
+  it should "handle enum in Bundle" in {
+    // Define ReqBundle at module level to avoid anonymous bundle issue
+    class TestModule extends Module {
+      val io = IO(new Bundle {
+        val req = Input(new ReqBundle)
+        val out = Output(UInt(1.W))
+      })
+      io.out := io.req.cmd.asUInt
+    }
+    val chirrtl = emitWithDebug(new TestModule)
+    // The Bundle type is reflected in the FIRRTL type
+    chirrtl should include("cmd")
+    // We do NOT expect enum variants inside a Bundle's port type string —
+    // enum info is only emitted for local wires/regs that are EnumType.
+  }
 }
