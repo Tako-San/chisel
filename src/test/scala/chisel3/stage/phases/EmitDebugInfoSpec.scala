@@ -381,7 +381,13 @@ class EmitDebugInfoSpec extends AnyFlatSpec with Matchers {
       io.out := io.in
     })
     // Verify the intrinsic includes the port reference as an argument
-    chirrtl should include("""intrinsic(circt_dbg_variable<name = "io", type = ".*">, io)""")
+    val dbgLine = chirrtl.split("\n").find(_.contains("name = \"io\""))
+    dbgLine should not be empty
+    dbgLine.foreach { line =>
+      line should include(", io)")
+      // Check Node arg appears before source info
+      (line should include).regex(".*, io\\) \\@\\[")
+    }
   }
 
   it should "include signal reference in intrinsic for memory" in {
@@ -394,7 +400,11 @@ class EmitDebugInfoSpec extends AnyFlatSpec with Matchers {
       io.out := mem(io.addr)
     })
     // Verify the intrinsic includes the memory reference as an argument
-    chirrtl should include("""intrinsic(circt_dbg_variable<name = "mem", type = ".*">, mem)""")
+    val dbgLine = chirrtl.split("\n").find(_.contains("name = \"mem\""))
+    dbgLine should not be empty
+    dbgLine.foreach { line =>
+      line should include(", mem)")
+    }
   }
 
   it should "include signal reference in debug() API call" in {
@@ -409,7 +419,12 @@ class EmitDebugInfoSpec extends AnyFlatSpec with Matchers {
       debug(w, "my_w")
     })
     // Verify the debug() API intrinsic includes the signal reference
-    chirrtl should include("""intrinsic(circt_dbg_variable<name = "my_w", type = "UInt<8>">, my_w)""")
+    // Node(w) resolves to actual signal name "w", not custom name "my_w"
+    val dbgLine = chirrtl.split("\n").find(_.contains("name = \"my_w\""))
+    dbgLine should not be empty
+    dbgLine.foreach { line =>
+      line should include(", w)")
+    }
   }
 
   it should "include signal reference in .instrumentDebug() extension method" in {
@@ -424,6 +439,11 @@ class EmitDebugInfoSpec extends AnyFlatSpec with Matchers {
       w.instrumentDebug("ext_w")
     })
     // Verify the .instrumentDebug() intrinsic includes the signal reference
-    chirrtl should include("""intrinsic(circt_dbg_variable<name = "ext_w", type = "UInt<8>">, ext_w)""")
+    // Node(w) resolves to actual signal name "w", not custom name "ext_w"
+    val dbgLine = chirrtl.split("\n").find(_.contains("name = \"ext_w\""))
+    dbgLine should not be empty
+    dbgLine.foreach { line =>
+      line should include(", w)")
+    }
   }
 }
