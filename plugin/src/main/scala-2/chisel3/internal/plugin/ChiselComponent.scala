@@ -189,8 +189,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
 
     // Helper method to wrap RHS with debug recording (minimal placeholder implementation)
     private def wrapWithDebugRecording(dd: ValDef, tpe: Type, named: Tree): Tree = {
-      // Minimal implementation: return original rhs without modification
-      dd.rhs
+      // TODO: in future, wrap `named` with Builder.recordDebugType call
+      named // Pass through the already-named tree to preserve suggestName/withName
     }
 
     // Method called by the compiler to modify source tree
