@@ -63,7 +63,7 @@ class EmitDebugInfo extends Phase {
   ): Unit =
     ports.foreach { port =>
       val data = port.id
-      emitVariable(target, data.instanceName, data.typeName, chiselTypeName(data), port.sourceInfo)
+      emitVariable(target, data.instanceName, data.typeName, chiselTypeName(data), port.sourceInfo, data)
     }
 
   /** Recurse through all nested blocks, but always emit into the
@@ -77,15 +77,15 @@ class EmitDebugInfo extends Phase {
   ): Unit =
     current.getCommands().toList.foreach {
       case DefWire(si, id: chisel3.Data) =>
-        emitVariable(target, id.instanceName, id.typeName, chiselTypeName(id), si)
+        emitVariable(target, id.instanceName, id.typeName, chiselTypeName(id), si, id)
       case DefReg(si, id: chisel3.Data, _) =>
-        emitVariable(target, id.instanceName, id.typeName, chiselTypeName(id), si)
+        emitVariable(target, id.instanceName, id.typeName, chiselTypeName(id), si, id)
       case DefRegInit(si, id: chisel3.Data, _, _, _) =>
-        emitVariable(target, id.instanceName, id.typeName, chiselTypeName(id), si)
+        emitVariable(target, id.instanceName, id.typeName, chiselTypeName(id), si, id)
       case DefMemory(si, memId, memType, _) =>
-        emitVariable(target, nameOf(memId), memType.typeName, chiselTypeName(memType), si)
+        emitVariable(target, nameOf(memId), memType.typeName, chiselTypeName(memType), si, memId)
       case DefSeqMemory(si, memId, memType, _, _) =>
-        emitVariable(target, nameOf(memId), memType.typeName, chiselTypeName(memType), si)
+        emitVariable(target, nameOf(memId), memType.typeName, chiselTypeName(memType), si, memId)
       case w: When =>
         collectAndInstrument(w.ifRegion, target, moduleName)
         if (w.hasElse)
@@ -105,7 +105,8 @@ class EmitDebugInfo extends Phase {
     sigName:    String,
     firrtlType: String,
     chiselType: String,
-    sourceInfo: chisel3.experimental.SourceInfo
+    sourceInfo: chisel3.experimental.SourceInfo,
+    dataRef:    chisel3.internal.HasId
   ): Unit = {
     val params = Seq(
       "name" -> StringParam(sigName),
@@ -116,7 +117,7 @@ class EmitDebugInfo extends Phase {
       else Seq.empty
     )
     target.addSecretCommand(
-      DefIntrinsic(sourceInfo, "circt_dbg_variable", Seq.empty[Arg], params)
+      DefIntrinsic(sourceInfo, "circt_dbg_variable", Seq(Node(dataRef)), params)
     )
   }
 
