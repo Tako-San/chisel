@@ -9,7 +9,6 @@ import scala.tools.nsc
 import scala.tools.nsc.{Global, Phase}
 import scala.tools.nsc.plugins.PluginComponent
 import scala.tools.nsc.transform.TypingTransformers
-import scala.util.Try
 
 import chisel3.internal.sourceinfo.SourceInfoFileResolver
 
@@ -33,6 +32,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
   }
 
   class MyTypingTransformer(unit: CompilationUnit) extends TypingTransformer(unit) with ChiselInnerUtils {
+
+    private val MaxCtorParamLength = 40
 
     private def shouldMatchGen(bases: Tree*): Type => Boolean = {
       val cache = mutable.HashMap.empty[Type, Boolean]
@@ -199,7 +200,7 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
         .map(_.map { a =>
           try {
             val s = a.toString
-            if (s.length > 40) s.substring(0, 40) else s
+            if (s.length > MaxCtorParamLength) s.substring(0, MaxCtorParamLength) else s
           } catch { case _: Exception => "?" }
         }.mkString(","))
         .getOrElse("")
@@ -265,7 +266,7 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
           val str = stringFromTermName(name)
           val newRHS = transform(rhs)
           val named = q"chisel3.withName($str)($newRHS)"
-          val wrapped = wrapWithDebugRecording(dd, tpe, named) // ← add this line
+          val wrapped = wrapWithDebugRecording(dd, tpe, named)
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         } else {
           // Otherwise, continue
