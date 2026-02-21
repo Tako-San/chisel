@@ -3,34 +3,107 @@
 package chisel3.internal
 
 import chisel3._
-import org.scalatest.flatspec.AnyFlatSpec
-import org.scalatest.matchers.should.Matchers._
 import circt.stage.ChiselStage
-import scala.util.Try
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+import scala.sys.process._
+import java.nio.file._
+import java.nio.charset.StandardCharsets
 
-class FirtoolRoundTripSpec extends AnyFlatSpec {
-  behavior.of("FIRRTL round-trip with debug intrinsics")
+class FirtoolRoundTripSpec extends AnyFlatSpec with Matchers {
 
   // ── Module definitions ──
   class TestModule extends RawModule {
     val in = IO(Input(UInt(8.W)))
-    in.suggestName("in")
+    val out = IO(Output(UInt(8.W)))
+    out := in
   }
 
-  it should "produce parseable CHIRRTL with debug intrinsics" in {
+  // ── Test: Round‑trip with firtool using --emit-debug-type-info ──
+  it should "round‑trip CHIRRTL through firtool with --emit-debug-type-info" in {
+    // Use ChiselStage to emit CHIRRTL with debug type info
     val chirrtl = ChiselStage.emitCHIRRTL(
-      new TestModule,
+      gen = new TestModule,
       args = Array("--emit-debug-type-info")
     )
 
-    // Verify it's valid FIRRTL by checking basic structure
+    // Verify the emitted CHIRRTL contains the debug intrinsic
     chirrtl should include("FIRRTL version")
     chirrtl should include("module")
     chirrtl should include("circt_debug_typetag")
 
-    // Note: firtool round-trip parsing test omitted since --allow-unrecognized-intrinsic
-    // flag is not available in current firtool version. The CHIRRTL structure is
-    // verified above to ensure the debug intrinsics are properly emitted.
-  }
+    // Write the emitted IR to a temporary file
+    val tempDir = Files.createTempDirectory("firtool-roundtrip-")
+    val chirrtlFile = tempDir.resolve("test.chirrtl")
+    Files.write(chirrtlFile, chirrtl.getBytes(StandardCharsets.UTF_8))
 
+    try {
+      // Execute firtool on the file with --allow-unrecognized-intrinsic flag
+      val outputDir = tempDir.resolve("output")
+      Files.createDirectories(outputDir)
+
+      // Build the firtool command
+      val firtoolCmd = Seq(
+        "firtool",
+        chirrtlFile.toString,
+        "--allow-unrecognized-intrinsic",
+        "-o",
+        outputDir.resolve("output.ir").toString
+      )
+
+      // Execute the command and capture the exit code
+      val processLogger = ProcessLogger(
+        stdout => (), // Ignore stdout
+        stderr => () // Ignore stderr
+      )
+
+      val exitCode: Int =
+        try {
+          Process(firtoolCmd).!(processLogger)
+        } catch {
+          case _: java.io.IOException =>
+            // firtool command not found, assume unsupported
+            assume(false, "firtool not found in PATH")
+            -1
+        }
+
+      // If firtool returns a non-zero exit code indicating the flag is unsupported,
+      // use assume(false, ...) to skip the test
+      if (exitCode != 0) {
+        // The flag may not be supported; check if the error message indicates this
+        val errorOutput =
+          try {
+            Process(Seq("firtool", "--help")).!!.toLowerCase
+          } catch {
+            case _: Exception => ""
+          }
+
+        if (!errorOutput.contains("allow-unrecognized-intrinsic")) {
+          assume(false, "firtool does not support --allow-unrecognized-intrinsic")
+        }
+      }
+
+      // Assert that the exit code is 0, meaning the round‑trip succeeded
+      exitCode shouldBe 0
+    } finally {
+      // Clean up temporary files
+      try {
+        Files.walkFileTree(
+          tempDir,
+          new SimpleFileVisitor[Path] {
+            override def visitFile(file: Path, attrs: java.nio.file.attribute.BasicFileAttributes) = {
+              Files.delete(file)
+              FileVisitResult.CONTINUE
+            }
+            override def postVisitDirectory(dir: Path, exc: java.io.IOException) = {
+              Files.delete(dir)
+              FileVisitResult.CONTINUE
+            }
+          }
+        )
+      } catch {
+        case _: Exception => () // Ignore cleanup errors
+      }
+    }
+  }
 }
