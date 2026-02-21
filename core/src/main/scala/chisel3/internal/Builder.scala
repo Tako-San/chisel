@@ -617,11 +617,12 @@ private[chisel3] object Builder extends LazyLogging {
 
   /** Compile-time debug type info, collected by compiler plugin. */
   case class DebugTypeRecord(
-    className:  String,
-    params:     String,
-    sourceFile: String,
-    sourceLine: Int,
-    enumDef:    Option[Map[BigInt, String]] = None // for future plugin injection
+    className:     String,
+    params:        String, // human-readable summary
+    sourceFile:    String,
+    sourceLine:    Int,
+    enumDef:       Option[Map[BigInt, String]] = None, // for future plugin injection
+    ctorParamJson: Option[String] = None // structured ctor params for modules
   )
 
   // Side-table: HasId._id → debug type info. Uses DynamicVariable
@@ -631,13 +632,15 @@ private[chisel3] object Builder extends LazyLogging {
 
   /** Called by compiler-plugin-injected code to record compile-time type info. */
   private[chisel3] def recordDebugType(
-    target:     HasId,
-    className:  String,
-    params:     String,
-    sourceFile: String,
-    sourceLine: Int
+    target:        HasId,
+    className:     String,
+    params:        String,
+    sourceFile:    String,
+    sourceLine:    Int,
+    ctorParamJson: String = ""
   ): Unit = {
-    debugTypeInfo.value(target._id) = DebugTypeRecord(className, params, sourceFile, sourceLine)
+    val jsonOpt = if (ctorParamJson.nonEmpty) Some(ctorParamJson) else None
+    debugTypeInfo.value(target._id) = DebugTypeRecord(className, params, sourceFile, sourceLine, None, jsonOpt)
   }
 
   /** Retrieve compile-time debug info for a HasId, if available. */

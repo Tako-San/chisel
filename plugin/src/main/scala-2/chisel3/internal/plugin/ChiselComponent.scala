@@ -206,6 +206,30 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
         .getOrElse("")
     }
 
+    /** Extract constructor parameters as a JSON string.
+      * Uses same argument finding logic as extractCtorParams but returns JSON.
+      */
+    private def extractCtorParamsAsJson(rhs: Tree): String = {
+      def findNewArgs(t: Tree): Option[List[Tree]] = t match {
+        case Apply(Select(New(_), nme.CONSTRUCTOR), args) => Some(args)
+        case Apply(fun, _)                                => findNewArgs(fun)
+        case Block(_, expr)                               => findNewArgs(expr)
+        case Typed(expr, _)                               => findNewArgs(expr)
+        case _                                            => None
+      }
+
+      val args = findNewArgs(rhs).getOrElse(Nil)
+      if (args.isEmpty) "{}"
+      else {
+        val fields = args.zipWithIndex.map { case (arg, idx) =>
+          val key = s"arg$idx"
+          val valueString = arg.toString.replace("\"", "\'")
+          s""""$key":"$valueString""""
+        }.mkString(",")
+        s"{$fields}"
+      }
+    }
+
     private def wrapWithDebugRecording(dd: ValDef, tpe: Type, named: Tree): Tree = {
       // Only inject if the plugin flag is set
       if (!arguments.emitDebugTypeInfo) return named
@@ -215,10 +239,22 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       val sourceFile = Literal(Constant(dd.pos.source.file.name))
       val sourceLine = Literal(Constant(dd.pos.line))
 
+      // NEW: structured ctor params JSON for modules/instances
+      val ctorParamJsonLiteral: Tree =
+        if (shouldMatchModule(tpe) || shouldMatchInstance(tpe)) {
+          val json = extractCtorParamsAsJson(dd.rhs)
+          Literal(Constant(json))
+        } else Literal(Constant(""))
+
       q"""{
         val $$result$$ = $named
         _root_.chisel3.internal.Builder.recordDebugType(
-          $$result$$, $className, $params, $sourceFile, $sourceLine
+          $$result$$,
+          $className,
+          $params,
+          $sourceFile,
+          $sourceLine,
+          $ctorParamJsonLiteral
         )
         $$result$$
       }"""
