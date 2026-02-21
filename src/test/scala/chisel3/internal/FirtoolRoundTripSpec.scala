@@ -27,9 +27,10 @@ class FirtoolRoundTripSpec extends AnyFlatSpec {
     chirrtl should include("FIRRTL version")
     chirrtl should include("module")
     chirrtl should include("circt_debug_typetag")
-    
+
     // Note: firtool round-trip parsing test omitted since --allow-unrecognized-intrinsic
     // flag is not available in current firtool version. The CHIRRTL structure is
     // verified above to ensure the debug intrinsics are properly emitted.
   }
+
 }

@@ -79,7 +79,14 @@ private[chisel3] object DebugTypeEmitter {
         .filter(f => f.getType.isPrimitive || f.getType == classOf[String])
         .map { f =>
           f.setAccessible(true)
-          s""""${f.getName}":${f.get(mod)}"""
+          val v = f.get(mod)
+          val jsonVal = v match {
+            case n: java.lang.Number  => n.toString
+            case b: java.lang.Boolean => b.toString
+            case s: String            => s""""${esc(s)}""""
+            case other => s""""${esc(String.valueOf(other))}""""
+          }
+          s""""${esc(f.getName)}":$jsonVal"""
         }
         .mkString(",")
     }.getOrElse("")
@@ -257,7 +264,12 @@ private[chisel3] object DebugTypeEmitter {
         val allMethod = factory.getClass.getMethod("all")
         val allValues = allMethod.invoke(factory).asInstanceOf[Seq[EnumType]]
         val variants = allValues.zipWithIndex.map { case (v, i) =>
-          val vName = Try(v.toString).getOrElse(s"_$i")
+          // v.toString returns "MyState(0=IDLE)" — extract just "IDLE"
+          val raw = Try(v.toString).getOrElse(s"_$i")
+          val vName = raw.indexOf('=') match {
+            case -1  => raw // fallback: use as-is
+            case idx => raw.substring(idx + 1).stripSuffix(")") // "IDLE"
+          }
           s""""$i":"${esc(vName)}""""
         }.mkString(",")
         s""""enumDef":{"name":"${esc(enumName)}","variants":{$variants}}"""

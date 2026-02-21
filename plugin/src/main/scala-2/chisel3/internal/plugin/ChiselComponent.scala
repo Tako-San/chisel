@@ -182,40 +182,27 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
     private def stringFromTermName(name: TermName): String =
       name.toString.trim() // Remove trailing space (Scalac implementation detail)
 
-    // Helper method to check if a type is a leaf Chisel type
-    private def isLeafChiselType(tpe: Type): Boolean = false
-
     /** Extract constructor parameters from a `new Foo(a, b, c)` tree.
-      * Returns string like "a=<expr>,b=<expr>" for known patterns, "" otherwise.
+      * Recursively unwraps IO(...), Input(...), Wire(...) etc. to find
+      * the actual `new` call. Returns comma-separated arg strings, "" if none.
       */
     private def extractCtorParams(rhs: Tree): String = {
-      // Walk the RHS tree to find constructor arguments and return comma-separated string
-      // Limit each arg string to 40 chars, fallback to "?" if representation fails
-      def argToString(arg: Tree): String = {
-        try {
-          val s = arg.toString
-          if (s.length > 40) {
-            s.substring(0, 40)
-          } else {
-            s
-          }
-        } catch {
-          case _: Exception => "?"
-        }
+      def findNewArgs(t: Tree): Option[List[Tree]] = t match {
+        case Apply(Select(New(_), nme.CONSTRUCTOR), args) => Some(args)
+        case Apply(fun, _)                                => findNewArgs(fun) // unwrap IO(Input(new Foo(x)))
+        case Block(_, expr)                               => findNewArgs(expr)
+        case Typed(expr, _)                               => findNewArgs(expr)
+        case _                                            => None
       }
-
-      // Pattern match to find constructor arguments in the tree
-      val args: List[Tree] = rhs match {
-        case Apply(Select(New(_), nme.CONSTRUCTOR), ctorArgs) => ctorArgs
-        case Apply(fun, ctorArgs)                             => ctorArgs
-        case _                                                => Nil
-      }
-
-      if (args.nonEmpty) {
-        args.map(argToString).mkString(",")
-      } else {
-        ""
-      }
+      findNewArgs(rhs)
+        .filter(_.nonEmpty)
+        .map(_.map { a =>
+          try {
+            val s = a.toString
+            if (s.length > 40) s.substring(0, 40) else s
+          } catch { case _: Exception => "?" }
+        }.mkString(","))
+        .getOrElse("")
     }
 
     private def wrapWithDebugRecording(dd: ValDef, tpe: Type, named: Tree): Tree = {

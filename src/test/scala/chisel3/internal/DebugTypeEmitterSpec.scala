@@ -133,9 +133,10 @@ class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
   it should "emit enum variant map for ChiselEnum" in {
     val chirrtl = emitWithDebug(new EnumModule)
     chirrtl should include("\\\"enumDef\\\"")
-    chirrtl should include("\\\"MyState(0=IDLE)\\\"")
-    chirrtl should include("\\\"MyState(1=RUN)\\\"")
-    chirrtl should include("\\\"MyState(2=DONE)\\\"")
+    chirrtl should include("\\\"name\\\":\\\"MyState\\\"")
+    chirrtl should include("\\\"0\\\":\\\"IDLE\\\"")
+    chirrtl should include("\\\"1\\\":\\\"RUN\\\"")
+    chirrtl should include("\\\"2\\\":\\\"DONE\\\"")
   }
 
   it should "handle nested Vec(n, Bundle)" in {
