@@ -35,6 +35,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
 
     private val MaxCtorParamLength = 40
 
+    private val CtorParamSerializationWarning = "Failed to serialize constructor parameter"
+
     private def shouldMatchGen(bases: Tree*): Type => Boolean = {
       val cache = mutable.HashMap.empty[Type, Boolean]
       val baseTypes = bases.map(inferType)
@@ -203,46 +205,46 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       * into a more structured representation for downstream tools like Tywaves
       * or hw-debug-info.json. Callers must not rely on the exact string format.
       */
-    private def extractCtorParams(rhs: Tree): String = {
-      findNewArgs(rhs)
-        .filter(_.nonEmpty)
-        .map(_.map { a =>
+    /** Extract constructor parameters with flexible formatting.
+      * Consolidates common logic for parameter extraction and argument serialization.
+      * @param rhs The right-hand side tree to extract constructor args from
+      * @param fmt Either "csv" for comma-separated (truncated to 40 chars) or "json" for JSON format
+      * @return Formatted string based on fmt parameter: ""/comma-separated for csv, "{}"/JSON object for json
+      */
+    private def extractCtorParamsCommon(rhs: Tree, fmt: String): String = {
+      val args = findNewArgs(rhs).getOrElse(Nil)
+      if (args.isEmpty) {
+        if (fmt == "json") "{}" else ""
+      } else {
+        val result = args.zipWithIndex.map { case (arg, idx) =>
           try {
-            val s = a.toString
-            if (s.length > MaxCtorParamLength) s.substring(0, MaxCtorParamLength) else s
+            val valueString = arg.toString
+            if (fmt == "json") {
+              // Properly escape the string for JSON
+              val escaped = escapeJsonString(valueString)
+              s""""arg$idx":"$escaped""""
+            } else {
+              // Truncate to MaxCtorParamLength for CSV format
+              if (valueString.length > MaxCtorParamLength) valueString.substring(0, MaxCtorParamLength)
+              else valueString
+            }
           } catch {
             case e: Exception =>
-              global.reporter.warning(a.pos, s"Failed to serialize constructor parameter: ${e.getMessage}")
-              "<error>"
+              global.reporter.warning(arg.pos, s"$CtorParamSerializationWarning: ${e.getMessage}")
+              if (fmt == "json") s""""arg$idx":"<error>"""" else "<error>"
           }
-        }.mkString(","))
-        .getOrElse("")
+        }
+        if (fmt == "json") s"{$result}" else result.mkString(",")
+      }
     }
+
+    private def extractCtorParams(rhs: Tree): String = extractCtorParamsCommon(rhs, "csv")
 
     /** Extract constructor parameters as a properly escaped JSON string.
       * Uses same argument finding logic as extractCtorParams but returns JSON.
       * Uses proper JSON escaping to handle special characters.
       */
-    private def extractCtorParamsAsJson(rhs: Tree): String = {
-      val args = findNewArgs(rhs).getOrElse(Nil)
-      if (args.isEmpty) "{}"
-      else {
-        val fields = args.zipWithIndex.map { case (arg, idx) =>
-          val key = s"arg$idx"
-          try {
-            // Properly escape the string for JSON
-            val valueString = arg.toString
-            val escaped = escapeJsonString(valueString)
-            s""""$key":"$escaped""""
-          } catch {
-            case e: Exception =>
-              global.reporter.warning(arg.pos, s"Failed to serialize constructor parameter for JSON: ${e.getMessage}")
-              s""""$key":"<error>""""
-          }
-        }.mkString(",")
-        s"{$fields}"
-      }
-    }
+    private def extractCtorParamsAsJson(rhs: Tree): String = extractCtorParamsCommon(rhs, "json")
 
     /** Escape a string for use in JSON.
       * Handles the critical characters that must be escaped in JSON strings.

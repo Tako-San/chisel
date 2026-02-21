@@ -621,7 +621,7 @@ private[chisel3] object Builder extends LazyLogging {
     params:        String, // human-readable summary
     sourceFile:    String,
     sourceLine:    Int,
-    enumDef:       Option[Map[BigInt, String]] = None, // for future plugin injection
+    enumDef:       Option[Map[BigInt, String]] = None, // Reserved for future compiler plugin work (enum definitions extracted at runtime via reflection in DebugTypeEmitter.scala)
     ctorParamJson: Option[String] = None // structured ctor params for modules
   )
 
