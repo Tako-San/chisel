@@ -622,6 +622,33 @@ private[chisel3] object Builder extends LazyLogging {
   def unnamedViews:  ArrayBuffer[Data] = dynamicContext.unnamedViews
   def viewNamespace: Namespace = chiselContext.get.viewNamespace
 
+  case class DebugMeta(
+    className:     String,
+    params:        String,
+    sourceFile:    String,
+    sourceLine:    Int,
+    ctorParamJson: Option[String] = None
+  )
+
+  private[chisel3] val debugMetaInfo =
+    new DynamicVariable[mutable.Map[Long, DebugMeta]](mutable.Map.empty)
+
+  private[chisel3] def recordDebugMeta(
+    target:        HasId,
+    className:     String,
+    params:        String,
+    sourceFile:    String,
+    sourceLine:    Int,
+    ctorParamJson: Option[String] = None
+  ): Unit = {
+    debugMetaInfo.value(target._id) = DebugMeta(className, params, sourceFile, sourceLine, ctorParamJson)
+  }
+
+  private[chisel3] def getDebugMeta(target: HasId): Option[DebugMeta] =
+    debugMetaInfo.value.get(target._id)
+
+  private[chisel3] val debugMetaEmitterEnabled = new DynamicVariable[Boolean](false)
+
   // Puts a prefix string onto the prefix stack
   def pushPrefix(d: String): Unit = {
     val context = chiselContext.get()
