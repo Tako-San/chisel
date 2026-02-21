@@ -3,8 +3,15 @@
 package chisel3.internal
 
 import chisel3._
+import chisel3.experimental._
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import circt.stage.ChiselStage
+
+// ── Enum definition (must be at top level) ──
+object MyState extends ChiselEnum {
+  val IDLE, RUN, DONE = Value
+}
 
 class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
   behavior.of("DebugTypeEmitter")
@@ -41,10 +48,29 @@ class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
     val w = Wire(UInt()) // InferredWidth — must not throw
   }
 
+  // ── Test modules for Phase 1 enhancements ──
+
+  class DirectionModule extends RawModule {
+    val in = IO(Input(UInt(8.W))).suggestName("in")
+    val out = IO(Output(Bool())).suggestName("out")
+  }
+
+  class RegModule extends Module {
+    val r = RegInit(0.U(8.W))
+  }
+
+  class EnumModule extends Module {
+    val state = RegInit(MyState.IDLE)
+  }
+
+  class NestedModule extends RawModule {
+    val io = IO(Input(Vec(2, new MyBundle))).suggestName("io")
+  }
+
   // ── Helper ──
 
   private def emitWithDebug(gen: => RawModule): String = {
-    circt.stage.ChiselStage.emitCHIRRTL(gen, args = Array("--emit-debug-type-info"))
+    ChiselStage.emitCHIRRTL(gen, args = Array("--emit-debug-type-info"))
   }
 
   // ── Tests ──
@@ -79,15 +105,47 @@ class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
   }
 
   it should "NOT emit intrinsics when disabled" in {
-    val chirrtl = circt.stage.ChiselStage.emitCHIRRTL(new SimpleModule)
+    val chirrtl = ChiselStage.emitCHIRRTL(new SimpleModule)
     (chirrtl should not).include("circt_debug_typetag")
   }
 
   it should "enable debug types via --emit-debug-type-info CLI arg" in {
-    val chirrtl = circt.stage.ChiselStage.emitCHIRRTL(
+    val chirrtl = ChiselStage.emitCHIRRTL(
       new SimpleModule,
       args = Array("--emit-debug-type-info")
     )
     chirrtl should include("circt_debug_typetag")
+  }
+
+  // ── Phase 1 enhancement tests ──
+
+  it should "include direction for IO ports" in {
+    val chirrtl = emitWithDebug(new DirectionModule)
+    chirrtl should include("\\\"direction\\\":\\\"input\\\"")
+    chirrtl should include("\\\"direction\\\":\\\"output\\\"")
+  }
+
+  it should "emit circt_debug_typetag for Reg" in {
+    val chirrtl = emitWithDebug(new RegModule)
+    chirrtl should include("\\\"binding\\\":\\\"reg\\\"")
+  }
+
+  it should "emit enum variant map for ChiselEnum" in {
+    val chirrtl = emitWithDebug(new EnumModule)
+    chirrtl should include("\\\"enumDef\\\"")
+    chirrtl should include("\\\"MyState(0=IDLE)\\\"")
+    chirrtl should include("\\\"MyState(1=RUN)\\\"")
+    chirrtl should include("\\\"MyState(2=DONE)\\\"")
+  }
+
+  it should "handle nested Vec(n, Bundle)" in {
+    val chirrtl = emitWithDebug(new NestedModule)
+    chirrtl should include("\\\"vecLength\\\":2")
+    chirrtl should include("\\\"fields\\\"")
+  }
+
+  it should "emit circt_debug_moduleinfo" in {
+    val chirrtl = emitWithDebug(new RegModule)
+    chirrtl should include("circt_debug_moduleinfo")
   }
 }

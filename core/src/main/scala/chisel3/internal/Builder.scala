@@ -620,7 +620,8 @@ private[chisel3] object Builder extends LazyLogging {
     className:  String,
     params:     String,
     sourceFile: String,
-    sourceLine: Int
+    sourceLine: Int,
+    enumDef:    Option[Map[BigInt, String]] = None // for future plugin injection
   )
 
   // Side-table: HasId._id → debug type info. Uses DynamicVariable

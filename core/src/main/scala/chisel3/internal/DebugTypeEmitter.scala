@@ -3,10 +3,14 @@
 package chisel3.internal
 
 import chisel3._
+import chisel3.SpecifiedDirection
+import chisel3.EnumType
 import chisel3.experimental.SourceInfo
+import chisel3.internal.Builder
 import chisel3.internal.Builder.pushCommand
 import chisel3.internal.firrtl.ir.{DefIntrinsic, Node}
 import chisel3.internal.binding._
+import scala.util.Try
 
 /** Emits `circt_debug_typetag` intrinsic statements for Data objects during
   * module elaboration.
@@ -52,10 +56,49 @@ private[chisel3] object DebugTypeEmitter {
     * @param si  implicit SourceInfo (typically `UnlocatableSourceInfo`)
     */
   def emitForModule(ids: Iterable[HasId])(implicit si: SourceInfo): Unit = {
+    // ── Emit module-level metadata ──
+    emitModuleInfo()
+
+    // ── Emit per-signal metadata ──
     val dataItems = ids.collect {
       case d: Data if d.isSynthesizable && isInteresting(d) => d
     }
     dataItems.foreach(emitForData)
+  }
+
+  // ---------- module metadata ------------------------------------------
+
+  private def emitModuleInfo()(implicit si: SourceInfo): Unit = {
+    val mod = Builder.currentModule.getOrElse(return)
+    val modName = mod.name
+    val modClass = mod.getClass.getSimpleName.stripSuffix("$")
+
+    // Try to extract constructor params via reflection
+    val ctorParams = Try {
+      mod.getClass.getDeclaredFields
+        .filter(f => f.getType.isPrimitive || f.getType == classOf[String])
+        .map { f =>
+          f.setAccessible(true)
+          s""""${f.getName}":${f.get(mod)}"""
+        }
+        .mkString(",")
+    }.getOrElse("")
+
+    val json = new StringBuilder(128)
+    json.append(s"""{"kind":"module","className":"${esc(modClass)}","name":"${esc(modName)}"""")
+    if (ctorParams.nonEmpty) {
+      json.append(s""","ctorParams":{$ctorParams}""")
+    }
+    json.append('}')
+
+    pushCommand(
+      DefIntrinsic(
+        si,
+        "circt_debug_moduleinfo", // separate intrinsic for modules
+        Seq.empty,
+        Seq("info" -> StringParam(json.toString))
+      )
+    )
   }
 
   // ---------- filtering --------------------------------------------------
@@ -172,6 +215,13 @@ private[chisel3] object DebugTypeEmitter {
     }
     sb.append(s""","width":"$width"""")
     sb.append(s""","binding":"$binding"""")
+    val direction = data.specifiedDirection match {
+      case SpecifiedDirection.Input       => "input"
+      case SpecifiedDirection.Output      => "output"
+      case SpecifiedDirection.Flip        => "flip"
+      case SpecifiedDirection.Unspecified => "none"
+    }
+    sb.append(s""","direction":"$direction"""")
     sb.append(s""","sourceLoc":"${esc(sourceLoc)}"""")
 
     val structure = buildStructureJson(data)
@@ -180,8 +230,39 @@ private[chisel3] object DebugTypeEmitter {
       sb.append(structure)
     }
 
+    val enumInfo = buildEnumJson(data)
+    if (enumInfo.nonEmpty) {
+      sb.append(',')
+      sb.append(enumInfo)
+    }
+
     sb.append('}')
     sb.toString
+  }
+
+  // ---------- enum variant map ------------------------------------------
+
+  /** Build enum variant map JSON fragment if data is a ChiselEnum type.
+    * Returns empty string for non-enum types.
+    *
+    * Example: "enumDef":{"name":"MyState","variants":{"0":"IDLE","1":"A","2":"B"}}
+    */
+  private def buildEnumJson(data: Data): String = data match {
+    case e: EnumType =>
+      // EnumType exposes its factory via the companion ChiselEnum.
+      // We use reflection to reach the enum object and its `all` field.
+      Try {
+        val factory = e.factory // ChiselEnum companion object
+        val enumName = factory.getClass.getSimpleName.stripSuffix("$")
+        val allMethod = factory.getClass.getMethod("all")
+        val allValues = allMethod.invoke(factory).asInstanceOf[Seq[EnumType]]
+        val variants = allValues.zipWithIndex.map { case (v, i) =>
+          val vName = Try(v.toString).getOrElse(s"_$i")
+          s""""$i":"${esc(vName)}""""
+        }.mkString(",")
+        s""""enumDef":{"name":"${esc(enumName)}","variants":{$variants}}"""
+      }.getOrElse("")
+    case _ => ""
   }
 
   // ---------- aggregate structure ----------------------------------------
@@ -207,16 +288,19 @@ private[chisel3] object DebugTypeEmitter {
       val fields = r.elements.map { case (fieldName, fieldData) =>
         val w = fieldData.widthOption.map(_.toString).getOrElse("inferred")
         val t = fieldData.getClass.getSimpleName.stripSuffix("$")
-
-        // Recurse into nested aggregates
+        val dir = fieldData.specifiedDirection match {
+          case SpecifiedDirection.Input  => ""","direction":"input""""
+          case SpecifiedDirection.Output => ""","direction":"output""""
+          case SpecifiedDirection.Flip   => ""","direction":"flip""""
+          case _                         => ""","direction":"none""""
+        }
         val nested = fieldData match {
           case _: Record | _: Vec[_] =>
             val inner = buildStructureJson(fieldData)
             if (inner.nonEmpty) s",$inner" else ""
           case _ => ""
         }
-
-        s""""${esc(fieldName)}":{"type":"${esc(t)}","width":"$w"$nested}"""
+        s""""${esc(fieldName)}":{"type":"${esc(t)}","width":"$w"$dir$nested}"""
       }.mkString(",")
 
       if (fields.nonEmpty) s""""fields":{$fields}""" else ""

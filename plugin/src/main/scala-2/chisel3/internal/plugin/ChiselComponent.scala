@@ -9,6 +9,7 @@ import scala.tools.nsc
 import scala.tools.nsc.{Global, Phase}
 import scala.tools.nsc.plugins.PluginComponent
 import scala.tools.nsc.transform.TypingTransformers
+import scala.util.Try
 
 import chisel3.internal.sourceinfo.SourceInfoFileResolver
 
@@ -184,13 +185,55 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
     // Helper method to check if a type is a leaf Chisel type
     private def isLeafChiselType(tpe: Type): Boolean = false
 
-    // Helper method to extract constructor parameters from a RHS tree
-    private def extractCtorParams(rhs: Tree): String = ""
+    /** Extract constructor parameters from a `new Foo(a, b, c)` tree.
+      * Returns string like "a=<expr>,b=<expr>" for known patterns, "" otherwise.
+      */
+    private def extractCtorParams(rhs: Tree): String = {
+      // Walk the RHS tree to find constructor arguments and return comma-separated string
+      // Limit each arg string to 40 chars, fallback to "?" if representation fails
+      def argToString(arg: Tree): String = {
+        try {
+          val s = arg.toString
+          if (s.length > 40) {
+            s.substring(0, 40)
+          } else {
+            s
+          }
+        } catch {
+          case _: Exception => "?"
+        }
+      }
 
-    // Helper method to wrap RHS with debug recording (minimal placeholder implementation)
+      // Pattern match to find constructor arguments in the tree
+      val args: List[Tree] = rhs match {
+        case Apply(Select(New(_), nme.CONSTRUCTOR), ctorArgs) => ctorArgs
+        case Apply(fun, ctorArgs)                             => ctorArgs
+        case _                                                => Nil
+      }
+
+      if (args.nonEmpty) {
+        args.map(argToString).mkString(",")
+      } else {
+        ""
+      }
+    }
+
     private def wrapWithDebugRecording(dd: ValDef, tpe: Type, named: Tree): Tree = {
-      // TODO: in future, wrap `named` with Builder.recordDebugType call
-      named // Pass through the already-named tree to preserve suggestName/withName
+      // Only inject if the plugin flag is set
+      if (!arguments.emitDebugTypeInfo) return named
+
+      val className = Literal(Constant(tpe.typeSymbol.name.toString))
+      val params = Literal(Constant(extractCtorParams(dd.rhs)))
+      val sourceFile = Literal(Constant(dd.pos.source.file.name))
+      val sourceLine = Literal(Constant(dd.pos.line))
+
+      q"""{
+        val $$result$$ = $named
+        _root_.chisel3.internal.Builder.recordDebugType(
+          $$result$$, $className, $params, $sourceFile, $sourceLine
+        )
+        $$result$$
+      }"""
     }
 
     // Method called by the compiler to modify source tree
@@ -235,7 +278,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
           val str = stringFromTermName(name)
           val newRHS = transform(rhs)
           val named = q"chisel3.withName($str)($newRHS)"
-          treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(named))
+          val wrapped = wrapWithDebugRecording(dd, tpe, named) // ← add this line
+          treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         } else {
           // Otherwise, continue
           super.transform(tree)
