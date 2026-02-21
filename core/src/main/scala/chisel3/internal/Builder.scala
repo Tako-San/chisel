@@ -626,9 +626,8 @@ private[chisel3] object Builder extends LazyLogging {
 
   // Side-table: HasId._id → debug type info. Uses DynamicVariable
   // consistent with all other Builder state (currentModule, etc.)
-  private[chisel3] val debugTypeInfo = new DynamicVariable(
-    new mutable.HashMap[Long, DebugTypeRecord]()
-  )
+  private[chisel3] val debugTypeInfo =
+    new DynamicVariable[mutable.Map[Long, DebugTypeRecord]](mutable.Map.empty)
 
   /** Called by compiler-plugin-injected code to record compile-time type info. */
   private[chisel3] def recordDebugType(

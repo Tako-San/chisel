@@ -21,7 +21,7 @@ import firrtl.options.{Dependency, Phase}
 import firrtl.options.Viewer.view
 import logger.{LoggerOptions, LoggerOptionsView}
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.annotation.nowarn
 
 /** Elaborate all [[chisel3.stage.ChiselGeneratorAnnotation]]s into [[chisel3.stage.ChiselCircuitAnnotation]]s.
@@ -64,7 +64,9 @@ class Elaborate extends Phase {
         val (elaboratedCircuit, dut) = {
           val enableDebugTypes = annotations.exists(_.isInstanceOf[EmitDebugTypeInfoAnnotation.type])
           Builder.debugTypeEmitterEnabled.withValue(enableDebugTypes) {
-            Builder.build(Module(gen()), context)
+            Builder.debugTypeInfo.withValue(new HashMap[Long, Builder.DebugTypeRecord]()) {
+              Builder.build(Module(gen()), context)
+            }
           }
         }
         elaborationTrace.finish()
