@@ -34,4 +34,24 @@ class DebugTypeRecordSpec extends AnyFlatSpec with Matchers {
 
     circt.stage.ChiselStage.emitCHIRRTL(new TestModule)
   }
+
+  it should "record debug type info during elaboration" in {
+    var capturedInfo: Option[Builder.DebugTypeRecord] = None
+
+    class TestModule extends RawModule {
+      val w = Wire(UInt(8.W))
+      Builder.recordDebugType(w, "UInt", "width=8", "test.scala", 10)
+      // Check immediately, while we're still inside elaboration
+      val infoOpt = Builder.getDebugType(w)
+      capturedInfo = infoOpt
+      infoOpt shouldBe defined
+      infoOpt.get.className shouldBe "UInt"
+    }
+
+    circt.stage.ChiselStage.emitCHIRRTL(new TestModule)
+
+    // Verify the capture worked
+    capturedInfo shouldBe defined
+    capturedInfo.get.className shouldBe "UInt"
+  }
 }

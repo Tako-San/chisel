@@ -186,6 +186,10 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
     /** Extract constructor parameters from a `new Foo(a, b, c)` tree.
       * Recursively unwraps IO(...), Input(...), Wire(...) etc. to find
       * the actual `new` call. Returns comma-separated arg strings, "" if none.
+      *
+      * Currently returns a truncated, human-readable summary. This may evolve
+      * into a more structured representation for downstream tools like Tywaves
+      * or hw-debug-info.json. Callers must not rely on the exact string format.
       */
     private def extractCtorParams(rhs: Tree): String = {
       def findNewArgs(t: Tree): Option[List[Tree]] = t match {

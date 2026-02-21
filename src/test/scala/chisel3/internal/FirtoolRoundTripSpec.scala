@@ -52,9 +52,10 @@ class FirtoolRoundTripSpec extends AnyFlatSpec with Matchers {
       )
 
       // Execute the command and capture the exit code
+      val stderrBuf = new StringBuilder
       val processLogger = ProcessLogger(
         stdout => (), // Ignore stdout
-        stderr => () // Ignore stderr
+        stderr => stderrBuf.append(stderr).append("\n")
       )
 
       val exitCode: Int =
@@ -70,6 +71,7 @@ class FirtoolRoundTripSpec extends AnyFlatSpec with Matchers {
       // If firtool returns a non-zero exit code indicating the flag is unsupported,
       // use assume(false, ...) to skip the test
       if (exitCode != 0) {
+        info(s"firtool stderr:\n$stderrBuf")
         // The flag may not be supported; check if the error message indicates this
         val errorOutput =
           try {

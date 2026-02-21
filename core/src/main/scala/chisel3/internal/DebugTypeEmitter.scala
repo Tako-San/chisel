@@ -185,17 +185,6 @@ private[chisel3] object DebugTypeEmitter {
   private def emitForData(data: Data)(implicit si: SourceInfo): Unit = {
     val json = buildJsonPayload(data)
 
-    // ---- Param construction ----
-    // chisel3.StringParam(value: String) is the Chisel-level Param.
-    // DefIntrinsic expects Seq[(String, chisel3.Param)], NOT firrtl.ir.Param.
-    // The Converter maps chisel3.StringParam → firrtl.ir.StringParam(name, StringLit(...))
-    //
-    // FALLBACK: If StringParam is not in scope or expects different args,
-    // try one of these alternatives (uncomment as needed):
-    //   import chisel3.{StringParam => SP}  // explicit import
-    //   RawParam(json)                      // avoids StringLit escaping
-    //   IntParam(BigInt(0))                 // dummy param for testing pipeline
-    // --- Param construction ---
     pushCommand(
       DefIntrinsic(
         si,

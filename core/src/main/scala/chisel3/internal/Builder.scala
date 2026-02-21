@@ -625,8 +625,12 @@ private[chisel3] object Builder extends LazyLogging {
     ctorParamJson: Option[String] = None // structured ctor params for modules
   )
 
-  // Side-table: HasId._id → debug type info. Uses DynamicVariable
-  // consistent with all other Builder state (currentModule, etc.)
+  /** Side-table: HasId._id → DebugTypeRecord.
+    *
+    * A fresh mutable Map must be installed via withValue() for each elaboration
+    * (see chisel3.stage.phases.Elaborate). The default value is only a
+    * placeholder and must not be used to store entries outside the stage pipeline.
+    */
   private[chisel3] val debugTypeInfo =
     new DynamicVariable[mutable.Map[Long, DebugTypeRecord]](mutable.Map.empty)
 
