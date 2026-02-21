@@ -627,8 +627,13 @@ private[chisel3] object Serializer {
         }
         Iterator(start) ++ serialize(block, ctx, typeAliases)(indent + 1, suppressSourceInfo)
 
-      case ctx @ DefBlackBox(id, name, ports, topDir, params, knownLayers, requirements) =>
+      case ctx @ DefBlackBox(id, name, ports, topDir, params, knownLayers, requirements, debugInfo) =>
         implicit val b = new StringBuilder
+        debugInfo.foreach { json =>
+          doIndent(0)
+          b ++= s"""@[circt_debug_moduleinfo = "${json.replace("\"", "\\\"")}"]"""
+          b += NewLine
+        }
         doIndent(0); b ++= "extmodule "; b ++= legalize(name);
         if (knownLayers.nonEmpty) {
           b ++= knownLayers.map(_.fullName).mkString(" knownlayer ", ", ", "")

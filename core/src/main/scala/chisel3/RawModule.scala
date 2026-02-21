@@ -4,6 +4,7 @@ package chisel3
 
 import scala.util.Try
 import chisel3.experimental.{BaseModule, OpaqueType, SourceInfo, UnlocatableSourceInfo}
+import chisel3.internal.DebugMetaEmitter
 import chisel3.internal._
 import chisel3.internal.binding._
 import chisel3.experimental.hierarchy.{InstanceClone, ModuleClone}
@@ -164,6 +165,10 @@ abstract class RawModule extends BaseModule {
 
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
+
+    if (Builder.debugMetaEmitterEnabled.value) {
+      DebugMetaEmitter.emitModuleMeta(_ids)(chisel3.experimental.UnlocatableSourceInfo)
+    }
 
     _closed = true
 

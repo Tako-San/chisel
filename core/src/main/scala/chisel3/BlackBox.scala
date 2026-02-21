@@ -106,6 +106,12 @@ abstract class BlackBox(
       Port(namedPort._2, namedPort._2.specifiedDirection, Seq.empty, ioSourceInfo)
     }
 
+    val bbDebugInfo: Option[String] =
+      if (internal.Builder.debugMetaEmitterEnabled.value) {
+        val debugMetaOpt = internal.Builder.getDebugMeta(this)
+        Some(internal.DebugMetaEmitter.buildBlackBoxModuleInfoJson(name, getClass, debugMetaOpt))
+      } else None
+
     val component = DefBlackBox(
       this,
       name,
@@ -113,7 +119,8 @@ abstract class BlackBox(
       io.specifiedDirection,
       params,
       getKnownLayers,
-      requirements = requirements
+      requirements = requirements,
+      bbDebugInfo
     )
     _component = Some(component)
     _component

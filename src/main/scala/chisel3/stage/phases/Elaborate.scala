@@ -62,7 +62,12 @@ class Elaborate extends Phase {
             elaborationTrace
           )
         val (elaboratedCircuit, dut) = {
-          Builder.build(Module(gen()), context)
+          val enableDebugTypes = chiselOptions.emitDebugMetaInfo
+          Builder.debugMetaEmitterEnabled.withValue(enableDebugTypes) {
+            Builder.debugMetaInfo.withValue(new mutable.HashMap[Long, Builder.DebugMeta]()) {
+              Builder.build(Module(gen()), context)
+            }
+          }
         }
         elaborationTrace.finish()
 
