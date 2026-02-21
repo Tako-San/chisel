@@ -104,7 +104,11 @@ class FirtoolRoundTripSpec extends AnyFlatSpec with Matchers {
           }
         )
       } catch {
-        case _: Exception => () // Ignore cleanup errors
+        case ex: Exception =>
+          // Log cleanup errors but don't fail the test
+          System.err.println(
+            s"[FirtoolRoundTripSpec] Warning: Failed to cleanup temp directory $tempDir: ${ex.getMessage}"
+          )
       }
     }
   }

@@ -82,8 +82,8 @@ private[chisel3] object DebugTypeEmitter {
   /** FIRRTL intrinsic names. A matching CIRCT pass must exist or firtool
     * will error on unknown intrinsic unless --allow-unrecognized-intrinsic is used.
     */
-  val TypeTagIntrinsic = "circt_debug_typetag"
-  val ModuleInfoIntrinsic = "circt_debug_moduleinfo"
+  private final val TypeTagIntrinsic = "circt_debug_typetag"
+  private final val ModuleInfoIntrinsic = "circt_debug_moduleinfo"
 
   private val MaxParamStringLength = 40
 
@@ -248,7 +248,10 @@ private[chisel3] object DebugTypeEmitter {
 
   // --- enum variant map ---
 
-  /** Build enum definition object, or None for non-enum types. */
+  /** Build enum definition object, or None for non-enum types.
+    * Uses reflection to extract enum variants and their names.
+    * When toString fails on enum variant, logs warning to stderr and uses index-based fallback.
+    */
   private def buildEnumJson(data: Data): Option[ujson.Obj] = data match {
     case e: EnumType =>
       Try {
@@ -259,12 +262,15 @@ private[chisel3] object DebugTypeEmitter {
 
         val variants = ujson.Obj()
         allValues.zipWithIndex.foreach { case (v, i) =>
-          val raw = Try(v.toString).getOrElse(s"_$i")
-          val vName = raw.indexOf('=') match {
+          val raw = Try(v.toString).getOrElse {
+            Console.err.println(s"[DebugTypeEmitter] Warning: Failed to get toString for enum variant at index $i")
+            s"variant_$i"
+          }
+          val name = raw.indexOf('=') match {
             case -1  => raw
             case idx => raw.substring(idx + 1).stripSuffix(")")
           }
-          variants(i.toString) = ujson.Str(vName)
+          variants(i.toString) = ujson.Str(name)
         }
 
         ujson.Obj("name" -> ujson.Str(enumName), "variants" -> variants)

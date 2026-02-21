@@ -630,6 +630,10 @@ private[chisel3] object Builder extends LazyLogging {
     * A fresh mutable Map must be installed via withValue() for each elaboration
     * (see chisel3.stage.phases.Elaborate). The default value is only a
     * placeholder and must not be used to store entries outside the stage pipeline.
+    *
+    * NOTE: This mutable side-table is a known limitation. Future improvements
+    * should consider making the debug type API more controlled with immutable
+    * interface patterns to prevent accidental mutations during elaboration.
     */
   private[chisel3] val debugTypeInfo =
     new DynamicVariable[mutable.Map[Long, DebugTypeRecord]](mutable.Map.empty)

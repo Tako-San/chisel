@@ -183,6 +183,18 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
     private def stringFromTermName(name: TermName): String =
       name.toString.trim() // Remove trailing space (Scalac implementation detail)
 
+    /** Helper function to find constructor arguments by unwrapping tree structure.
+      * Recursively unwraps IO(...), Input(...), Wire(...) etc. to find
+      * the actual `new` call.
+      */
+    private def findNewArgs(t: Tree): Option[List[Tree]] = t match {
+      case Apply(Select(New(_), nme.CONSTRUCTOR), args) => Some(args)
+      case Apply(fun, _)                                => findNewArgs(fun) // unwrap IO(Input(new Foo(x)))
+      case Block(_, expr)                               => findNewArgs(expr)
+      case Typed(expr, _)                               => findNewArgs(expr)
+      case _                                            => None
+    }
+
     /** Extract constructor parameters from a `new Foo(a, b, c)` tree.
       * Recursively unwraps IO(...), Input(...), Wire(...) etc. to find
       * the actual `new` call. Returns comma-separated arg strings, "" if none.
@@ -192,46 +204,67 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       * or hw-debug-info.json. Callers must not rely on the exact string format.
       */
     private def extractCtorParams(rhs: Tree): String = {
-      def findNewArgs(t: Tree): Option[List[Tree]] = t match {
-        case Apply(Select(New(_), nme.CONSTRUCTOR), args) => Some(args)
-        case Apply(fun, _)                                => findNewArgs(fun) // unwrap IO(Input(new Foo(x)))
-        case Block(_, expr)                               => findNewArgs(expr)
-        case Typed(expr, _)                               => findNewArgs(expr)
-        case _                                            => None
-      }
       findNewArgs(rhs)
         .filter(_.nonEmpty)
         .map(_.map { a =>
           try {
             val s = a.toString
             if (s.length > MaxCtorParamLength) s.substring(0, MaxCtorParamLength) else s
-          } catch { case _: Exception => "?" }
+          } catch {
+            case e: Exception =>
+              global.reporter.warning(a.pos, s"Failed to serialize constructor parameter: ${e.getMessage}")
+              "<error>"
+          }
         }.mkString(","))
         .getOrElse("")
     }
 
-    /** Extract constructor parameters as a JSON string.
+    /** Extract constructor parameters as a properly escaped JSON string.
       * Uses same argument finding logic as extractCtorParams but returns JSON.
+      * Uses proper JSON escaping to handle special characters.
       */
     private def extractCtorParamsAsJson(rhs: Tree): String = {
-      def findNewArgs(t: Tree): Option[List[Tree]] = t match {
-        case Apply(Select(New(_), nme.CONSTRUCTOR), args) => Some(args)
-        case Apply(fun, _)                                => findNewArgs(fun)
-        case Block(_, expr)                               => findNewArgs(expr)
-        case Typed(expr, _)                               => findNewArgs(expr)
-        case _                                            => None
-      }
-
       val args = findNewArgs(rhs).getOrElse(Nil)
       if (args.isEmpty) "{}"
       else {
         val fields = args.zipWithIndex.map { case (arg, idx) =>
           val key = s"arg$idx"
-          val valueString = arg.toString.replace("\"", "\'")
-          s""""$key":"$valueString""""
+          try {
+            // Properly escape the string for JSON
+            val valueString = arg.toString
+            val escaped = escapeJsonString(valueString)
+            s""""$key":"$escaped""""
+          } catch {
+            case e: Exception =>
+              global.reporter.warning(arg.pos, s"Failed to serialize constructor parameter for JSON: ${e.getMessage}")
+              s""""$key":"<error>""""
+          }
         }.mkString(",")
         s"{$fields}"
       }
+    }
+
+    /** Escape a string for use in JSON.
+      * Handles the critical characters that must be escaped in JSON strings.
+      */
+    private def escapeJsonString(s: String): String = {
+      val sb = new StringBuilder()
+      for (c <- s) {
+        c match {
+          case '"'                                    => sb.append("\\\"")
+          case '\\'                                   => sb.append("\\\\")
+          case '\b'                                   => sb.append("\\b")
+          case '\f'                                   => sb.append("\\f")
+          case '\n'                                   => sb.append("\\n")
+          case '\r'                                   => sb.append("\\r")
+          case '\t'                                   => sb.append("\\t")
+          case cc if cc >= '\u0000' && cc <= '\u001f' =>
+            // Control characters escape as \\uXXXX
+            sb.append(f"\\u${cc.toInt}%04x")
+          case _ => sb.append(c)
+        }
+      }
+      sb.toString()
     }
 
     private def wrapWithDebugRecording(dd: ValDef, tpe: Type, named: Tree): Tree = {

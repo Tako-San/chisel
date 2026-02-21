@@ -94,6 +94,9 @@ abstract class RawModule extends BaseModule {
   private[chisel3] def checkPorts(): Unit = {
     for ((port, source, _) <- getModulePortsAndLocators) {
       if (port._computeName(None).isEmpty) {
+        // NOTE: UnlocatableSourceInfo is used here because the actual source location
+        // may not be available during port naming phase. This is a known limitation
+        // that may result in less helpful error messages for port naming issues.
         Builder.error(
           s"Unable to name port $port in $this, " +
             s"try making it a public field of the Module ${source.makeMessage()}"
