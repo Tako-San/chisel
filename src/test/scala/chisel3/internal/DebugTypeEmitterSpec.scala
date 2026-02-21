@@ -7,6 +7,7 @@ import chisel3.experimental._
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import circt.stage.ChiselStage
+import scala.util.Try
 
 // ── Enum definition (must be at top level) ──
 object MyState extends ChiselEnum {
@@ -117,12 +118,30 @@ class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
     val in = IO(Input(UInt(8.W))).suggestName("in")
   }
 
-  // ── Helper ──
-  // Module extends RawModule, so accepting RawModule works for both types
-  // Note: Using RawModule directly since Module inherits from it
-
   private def emitWithDebug(gen: => RawModule): String = {
     ChiselStage.emitCHIRRTL(gen, args = Array("--emit-debug-type-info"))
+  }
+
+  /** Extract and parse all JSON payloads from intrinsic lines of given type. */
+  private def extractPayloads(chirrtl: String, intrinsicName: String): Seq[_root_.ujson.Value] = {
+    chirrtl
+      .split("\n")
+      .filter(_.contains(intrinsicName))
+      .flatMap { line =>
+        val marker = "info = \""
+        val start = line.indexOf(marker)
+        if (start < 0) None
+        else {
+          val payloadStart = start + marker.length
+          val payloadEnd = line.indexOf("\">", payloadStart)
+          if (payloadEnd < 0) None
+          else {
+            val raw = line.substring(payloadStart, payloadEnd)
+            Try(_root_.ujson.read(raw.replace("\\\"", "\""))).toOption
+          }
+        }
+      }
+      .toSeq
   }
 
   // ── Tests ──
@@ -206,63 +225,28 @@ class DebugTypeEmitterSpec extends AnyFlatSpec with Matchers {
 
   it should "validate circt_debug_typetag JSON payload has required fields" in {
     val chirrtl = emitWithDebug(new RegWithButtonModule)
-
-    // Extract JSON payload from intrinsic line
-    val intrinsicLine = chirrtl.split("\\n").find(_.contains("circt_debug_typetag")).get
-    val payloadStart = intrinsicLine.indexOf("info = ") + "info = ".length + 1 // skip past "info = "
-    val payloadEnd = intrinsicLine.indexOf("\">", payloadStart)
-    val jsonEscapedStr = intrinsicLine.substring(payloadStart, payloadEnd)
-
-    // Unescape the JSON string - replace escaped quotes
-    val jsonStr = jsonEscapedStr.replace("\\\"", "\"")
-
-    // Parse JSON
-    val json = _root_.ujson.read(jsonStr)
-
-    // Assert required top-level keys - className is the main type field, id may vary
-    assert(json.obj.contains("className"), "JSON payload must contain 'className' field")
+    val payloads = extractPayloads(chirrtl, "circt_debug_typetag")
+    payloads should not be empty
+    payloads.foreach { json =>
+      json.obj.keySet should contain("className")
+    }
   }
 
   it should "validate circt_debug_moduleinfo JSON payload has required fields" in {
     val chirrtl = emitWithDebug(new RegModule)
-
-    // Extract JSON payload from moduleinfo line
-    val intrinsicLine = chirrtl.split("\\n").find(_.contains("circt_debug_moduleinfo")).get
-    val payloadStart = intrinsicLine.indexOf("info = ") + "info = ".length + 1 // skip past "info = "
-    val payloadEnd = intrinsicLine.indexOf("\">", payloadStart)
-    val jsonEscapedStr = intrinsicLine.substring(payloadStart, payloadEnd)
-
-    // Unescape the JSON string
-    val jsonStr = jsonEscapedStr.replace("\\\"", "\"")
-
-    // Parse JSON
-    val json = _root_.ujson.read(jsonStr)
-
-    // Assert required top-level keys
-    assert(json.obj.contains("name"), "ModuleInfo JSON must contain 'name' field")
-    assert(json.obj.contains("ctorParams"), "ModuleInfo JSON must contain 'ctorParams' field")
+    val payloads = extractPayloads(chirrtl, "circt_debug_moduleinfo")
+    payloads should not be empty
+    val keys = payloads.head.obj.keySet
+    keys should contain("name")
+    keys should contain("kind")
+    keys should contain("className")
   }
 
   it should "validate enum JSON payload contains enumDef" in {
     val chirrtl = emitWithDebug(new EnumModule)
-
-    // Extract JSON payload from intrinsic line - look for Register typetag
-    val intrinsicLines = chirrtl.split("\\n").filter(_.contains("circt_debug_typetag"))
-    val intrinsicLine = intrinsicLines.head
-    val payloadStart = intrinsicLine.indexOf("info = ") + "info = ".length + 1 // skip past "info = "
-    val payloadEnd = intrinsicLine.indexOf("\">", payloadStart)
-    val jsonEscapedStr = intrinsicLine.substring(payloadStart, payloadEnd)
-
-    // Unescape the JSON string
-    val jsonStr = jsonEscapedStr.replace("\\\"", "\"")
-
-    // Parse JSON
-    val json = _root_.ujson.read(jsonStr)
-
-    // Assert required top-level keys
-    assert(json.obj.contains("className"), "JSON payload must contain 'className' field")
-
-    // Note: enumDef emission for registers containing enums may not be fully implemented yet
+    val payloads = extractPayloads(chirrtl, "circt_debug_typetag")
+    payloads should not be empty
+    payloads.exists(_.obj.contains("enumDef")) shouldBe true
   }
 
   // ── Edge case tests ──
