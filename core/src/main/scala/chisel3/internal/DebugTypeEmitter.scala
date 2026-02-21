@@ -13,7 +13,7 @@ import chisel3.internal.binding._
 import scala.util.Try
 import ujson._
 
-/** Emits `circt_debug_typetag` intrinsic statements for Data objects during
+/** Emits `circt_debug_*` intrinsics with JSON metadata for Data objects during
   * module elaboration.
   *
   * Called from `RawModule.generateComponent()` after all names are finalized
@@ -27,6 +27,55 @@ import ujson._
   *
   * Downstream consumers (Tywaves, HGDB, hw-debug-info.json export pass)
   * read the JSON from the intrinsic's "info" parameter.
+  *
+  * JSON payload schema (stable contract for downstream tools):
+  *
+  *  - For signal typetags (`circt_debug_typetag`), `info` is:
+  *    {
+  *      "className": String,             // required, Chisel-level type name (Bool, UInt, MyBundle, ...)
+  *      "width":     String,             // required, bit width or "inferred"
+  *      "binding":   String,             // required, one of: "port" | "reg" | "wire" | "memport" | "unknown"
+  *      "direction": String,             // required, one of: "input" | "output" | "flip" | "none"
+  *      "sourceLoc": String,             // required, "file.scala:line" or "unknown"
+  *      "params":    String,             // optional, human-readable ctor params summary
+  *      "fields": {                       // optional, for Bundle/Record
+  *        "<fieldName>": {
+  *          "type":      String,         // required
+  *          "width":     String,         // required
+  *          "direction": String,         // required
+  *          ... nested "fields"/"vecLength"/"element" recursively ...
+  *        },
+  *        ...
+  *      },
+  *      "vecLength": Number,             // optional, for Vec
+  *      "element": { ... },              // optional, for Vec element type
+  *      "enumDef": {                     // optional, for ChiselEnum-backed Data
+  *        "name":     String,            // required
+  *        "variants": {                  // required
+  *          "<index>": String            // numeric index → variant name
+  *        }
+  *      }
+  *    }
+  *
+  *  - For module-level info (`circt_debug_moduleinfo`), `info` is:
+  *    {
+  *      "kind":       "module",          // required, literal
+  *      "className":  String,           // required, Scala class name
+  *      "name":       String,           // required, elaborated RTL module name
+  *      "ctorParams": {                 // optional, best-effort map of primitive ctor params
+  *        "<param>": <JSON primitive>   // number, bool, or string
+  *      }
+  *    }
+  *
+  * Downstream consumers (Tywaves, HGDB, hw-debug-info.json export) may rely on
+  * required fields being present and on optional fields being absent instead
+  * of null when not applicable.
+  *
+  * Future work:
+  *  - A CIRCT pass can lower these intrinsics into dbg dialect ops
+  *    (e.g., dbg.moduleinfo, dbg.vardecl, dbg.struct) using the JSON payload
+  *    as a bridge. This object intentionally does not depend on dbg dialect
+  *    so that it can evolve independently of CIRCT.
   */
 private[chisel3] object DebugTypeEmitter {
 
@@ -87,32 +136,22 @@ private[chisel3] object DebugTypeEmitter {
   private def emitModuleInfo()(implicit si: SourceInfo): Unit =
     Builder.currentModule.foreach { mod =>
       val modName = mod.name
-      val modClass = mod.getClass.getSimpleName.stripSuffix("$")
+      val ctOpt = Builder.getDebugType(mod)
+
+      val className = ctOpt.map(_.className).getOrElse(mod.getClass.getSimpleName.stripSuffix("$"))
 
       val obj = ujson.Obj(
         "kind" -> ujson.Str("module"),
-        "className" -> ujson.Str(modClass),
+        "className" -> ujson.Str(className),
         "name" -> ujson.Str(modName)
       )
 
-      // Ctor params via reflection (best-effort)
-      Try {
-        val params = ujson.Obj()
-        mod.getClass.getDeclaredFields.filter { f =>
-          (f.getType.isPrimitive || f.getType == classOf[String]) &&
-          !f.getName.startsWith("_") &&
-          !f.getName.contains("$")
-        }.foreach { f =>
-          f.setAccessible(true)
-          val v = f.get(mod)
-          v match {
-            case n: java.lang.Number  => params(f.getName) = ujson.Num(n.doubleValue)
-            case b: java.lang.Boolean => params(f.getName) = ujson.Bool(b)
-            case s: String            => params(f.getName) = ujson.Str(s)
-            case other => params(f.getName) = ujson.Str(String.valueOf(other))
-          }
+      // Use structured ctorParams from plugin, if available
+      ctOpt.flatMap(_.ctorParamJson).foreach { jsonStr =>
+        Try(ujson.read(jsonStr)).toOption.foreach {
+          case o: ujson.Obj => obj("ctorParams") = o
+          case _ => () // ignore non-object payload
         }
-        if (params.obj.nonEmpty) obj("ctorParams") = params
       }
 
       pushCommand(
