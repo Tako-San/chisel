@@ -1,0 +1,6 @@
+# Algolia-Crawler-Verif: BF10E85101F030BF
+
+User-agent: *
+Allow: /
+Disallow: /api/snapshot/
+Sitemap: https://www.chisel-lang.org/sitemap.xml

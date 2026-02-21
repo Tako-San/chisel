@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>https://www.chisel-lang.org/blog</id>
+    <title>Chisel Blog</title>
+    <updated>2025-05-05T00:00:00.000Z</updated>
+    <generator>https://github.com/jpmonette/feed</generator>
+    <link rel="alternate" href="https://www.chisel-lang.org/blog"/>
+    <subtitle>Chisel Blog</subtitle>
+    <icon>https://www.chisel-lang.org/img/chisel-tool-icon.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Latch-Up 2025]]></title>
+        <id>https://www.chisel-lang.org/blog/latch-up-2025</id>
+        <link href="https://www.chisel-lang.org/blog/latch-up-2025"/>
+        <updated>2025-05-05T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Chisel update talk at Latch Up 2025]]></summary>
+        <content type="html"><![CDATA[<p>Latch-Up is a conference dedicated to open-source silicon organized by the <a href="https://fossi-foundation.org/" target="_blank" rel="noopener noreferrer" class="">FOSSi Foundation</a>.
+At Latch-Up 2025 in Santa Barbara, CA,
+I presented a <a href="https://www.youtube.com/watch?v=zbQGQR4MLds" target="_blank" rel="noopener noreferrer" class="">Chisel Update</a>, primarily focused on the recent <a href="https://github.com/chipsalliance/chisel/releases/tag/v7.0.0-RC1" target="_blank" rel="noopener noreferrer" class="">v7.0.0-RC1 release</a>.
+There were lots of other interesting talks, check out the full schedule which includes links to the recordings and slides for each talk: <a href="https://fossi-foundation.org/latch-up/2025" target="_blank" rel="noopener noreferrer" class="">https://fossi-foundation.org/latch-up/2025</a>.</p>
+<p>Two talks in particular that I think might interest the Chisel community:</p>
+<ul>
+<li class="">Rachit Nigram's talk <a href="https://www.youtube.com/watch?v=dzk_4rz23tE" target="_blank" rel="noopener noreferrer" class="">High-Performance Hardware Design with Hardcaml</a>--In this talk Rachit does a great job of helping explain the intuition of how one might build an eDSL (embedded domain specific language) like Chisel.</li>
+<li class="">Xiaoke Su's talk <a href="https://www.youtube.com/watch?v=b-LbD8Vq16k" target="_blank" rel="noopener noreferrer" class="">"One Student One Chip" Initiative: Learn to Build RISC-V Chips from Scratch with MOOC</a>--This talk is about thousands of students learning hardware design; apparently over half of the students choose to use Chisel which is pretty cool.</li>
+</ul>
+<p>Feel free to <a href="https://github.com/chipsalliance/chisel/discussions" target="_blank" rel="noopener noreferrer" class="">start a discussion</a> on Github or <a href="https://matrix.to/#/#chisel:matrix.org" target="_blank" rel="noopener noreferrer" class="">chat with us</a> on Matrix if you have any questions or thoughts about the talk.</p>]]></content>
+        <author>
+            <name>Jack Koenig</name>
+        </author>
+        <category label="Talk/Publication" term="Talk/Publication"/>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Restarting the Blog]]></title>
+        <id>https://www.chisel-lang.org/blog/restarting-the-blog</id>
+        <link href="https://www.chisel-lang.org/blog/restarting-the-blog"/>
+        <updated>2025-01-07T00:00:00.000Z</updated>
+        <summary type="html"><![CDATA[After a long hiatus, the Chisel developers are restarting the Chisel blog.]]></summary>
+        <content type="html"><![CDATA[<p>It's been many years since the Chisel project had a blog.  In the spirit of New
+Year's resolutions (and more pragmatically as a means to better communicate with
+the open source community about Chisel), the Chisel developers are restarting
+the blog.</p>
+<p>In the future look for posts by Chisel users and developers about new features,
+the rationale behind existing features, and more communication about the broad
+direction of Chisel.</p>]]></content>
+        <author>
+            <name>Schuyler Eldridge</name>
+            <uri>https://seldridge.dev</uri>
+        </author>
+        <category label="Miscellaneous" term="Miscellaneous"/>
+    </entry>
+</feed>
