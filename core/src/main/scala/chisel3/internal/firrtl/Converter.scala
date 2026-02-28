@@ -480,7 +480,7 @@ private[chisel3] object Converter {
         (ports ++ ctx.secretPorts).map(p => convert(p, typeAliases)),
         convert(block, ctx, typeAliases)
       )
-    case ctx @ DefBlackBox(id, name, ports, topDir, params, knownLayers, requirements, debugInfo) =>
+    case ctx @ DefBlackBox(id, name, ports, topDir, params, knownLayers, requirements) =>
       fir.ExtModule(
         convert(id._getSourceLocator),
         name,

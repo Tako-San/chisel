@@ -576,8 +576,7 @@ private[chisel3] object ir {
     topDir:       SpecifiedDirection,
     params:       Map[String, Param],
     knownLayers:  Seq[chisel3.layer.Layer],
-    requirements: Seq[String],
-    debugInfo:    Option[String] = None
+    requirements: Seq[String]
   ) extends Component
 
   object DefTestMarker {

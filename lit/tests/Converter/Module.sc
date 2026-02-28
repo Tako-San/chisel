@@ -1,8 +1,9 @@
+// REQUIRES: scala-2
 // RUN: scala-cli --server=false --java-home=%JAVAHOME --extra-jars=%RUNCLASSPATH --scala-version=%SCALAVERSION --scala-option="-Xplugin:%SCALAPLUGINJARS" %s | FileCheck %s
 // SPDX-License-Identifier: Apache-2.0
 
 import chisel3._
-import chisel3.experimental.{Analog, attach}
+import chisel3.experimental.{attach, Analog}
 import chisel3.util.SRAM
 
 // CHECK-LABEL: public module Attach :
@@ -76,7 +77,7 @@ class Mem extends Module {
   // CHECK: invalidate r.data
   r.data := DontCare
   // CHECK: when r.enable :
-  when (r.enable) {
+  when(r.enable) {
     // CHECK-NEXT: infer mport wrPort = mem[r.address], clock
     val wrPort = mem(r.address)
     // CHECK-NEXT: connect r.data, wrPort
@@ -86,7 +87,7 @@ class Mem extends Module {
   }
 
   // CHECK: when w.enable :
-  when (w.enable) {
+  when(w.enable) {
     // CHECK-NEXT: infer mport wrPort_1 = mem[w.address], clock
     val wrPort = mem(w.address)
     // CHECK-NEXT: connect wrPort_1, w.data

@@ -631,7 +631,7 @@ private[chisel3] object Builder extends LazyLogging {
   )
 
   private[chisel3] val debugMetaInfo =
-    new DynamicVariable[mutable.Map[Long, DebugMeta]](mutable.Map.empty)
+    ThreadLocal.withInitial[Option[mutable.HashMap[Long, DebugMeta]]](() => None)
 
   private[chisel3] def recordDebugMeta(
     target:        HasId,
@@ -640,14 +640,25 @@ private[chisel3] object Builder extends LazyLogging {
     sourceFile:    String,
     sourceLine:    Int,
     ctorParamJson: Option[String] = None
-  ): Unit = {
-    debugMetaInfo.value(target._id) = DebugMeta(className, params, sourceFile, sourceLine, ctorParamJson)
-  }
+  ): Unit =
+    debugMetaInfo.get().foreach { map =>
+      map(target._id) = DebugMeta(className, params, sourceFile, sourceLine, ctorParamJson)
+    }
 
   private[chisel3] def getDebugMeta(target: HasId): Option[DebugMeta] =
-    debugMetaInfo.value.get(target._id)
+    debugMetaInfo.get().flatMap(_.get(target._id))
 
-  private[chisel3] val debugMetaEmitterEnabled = new DynamicVariable[Boolean](false)
+  /** Open a debug metadata session (to be called at the beginning of Elaborate) */
+  private[chisel3] def openDebugMetaSession(): Unit =
+    debugMetaInfo.set(Some(new mutable.HashMap[Long, DebugMeta]()))
+
+  /** Close and clear a debug metadata session (to be called in finally block of Elaborate) */
+  private[chisel3] def closeDebugMetaSession(): Unit = {
+    debugMetaInfo.set(None)
+    // debugMetaEmitterEnabled is NOT reset here - it is managed separately
+  }
+
+  private[chisel3] val debugMetaEmitterEnabled = ThreadLocal.withInitial[Boolean](() => false)
 
   // Puts a prefix string onto the prefix stack
   def pushPrefix(d: String): Unit = {

@@ -2,6 +2,7 @@
 
 package chisel3.internal
 
+import java.util.Collections
 import java.util.WeakHashMap
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -39,7 +40,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   private final val ChiselPackageName = "chisel3"
 
   private val enumJsonCache: mutable.Map[ChiselEnum, ujson.Obj] =
-    new WeakHashMap[ChiselEnum, ujson.Obj]().asScala
+    Collections.synchronizedMap(new WeakHashMap[ChiselEnum, ujson.Obj]()).asScala
 
   private final val JsonMem = "mem"
 
@@ -85,6 +86,17 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     */
   def emitModuleMeta(ids: Iterable[HasId])(implicit si: SourceInfo): Unit = {
     emitModuleInfo()
+
+    val bbItems = ids.collect { case bb: chisel3.internal.BaseBlackBox => bb }
+    bbItems.foreach { bb =>
+      val debugMetaOpt = Builder.getDebugMeta(bb)
+      val obj = buildModuleInfoJson(bb.name, bb.getClass, debugMetaOpt)
+      addOptionalCtorParams(obj, bb.name, debugMetaOpt)
+      pushCommand(
+        DefIntrinsic(si, ModuleInfoIntrinsic, Seq.empty, Seq("info" -> StringParam(ujson.write(obj))))
+      )
+    }
+
     val dataItems = ids.collect {
       case d: Data if d.isSynthesizable && isDebuggable(d) => d
     }
@@ -140,16 +152,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       "className" -> ujson.Str(extractClassName(modClass, debugMetaOpt)),
       "name" -> ujson.Str(modName)
     )
-
-  private[chisel3] def buildBlackBoxModuleInfoJson(
-    modName:      String,
-    modClass:     Class[_],
-    debugMetaOpt: Option[Builder.DebugMeta]
-  ): String = {
-    val obj = buildModuleInfoJson(modName, modClass, debugMetaOpt)
-    addOptionalCtorParams(obj, modName, debugMetaOpt)
-    ujson.write(obj)
-  }
 
   private def addOptionalCtorParams(obj: ujson.Obj, modName: String, debugMetaOpt: Option[Builder.DebugMeta]): Unit =
     debugMetaOpt.flatMap(_.ctorParamJson).foreach { jsonStr =>

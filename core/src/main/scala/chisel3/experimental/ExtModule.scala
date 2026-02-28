@@ -117,12 +117,6 @@ abstract class ExtModule(
       Port(port, port.specifiedDirection, associations, sourceInfo)
     }
 
-    val bbDebugInfo: Option[String] =
-      if (chisel3.internal.Builder.debugMetaEmitterEnabled.value) {
-        val debugMetaOpt = chisel3.internal.Builder.getDebugMeta(this)
-        Some(chisel3.internal.DebugMetaEmitter.buildBlackBoxModuleInfoJson(name, getClass, debugMetaOpt))
-      } else None
-
     val component =
       DefBlackBox(
         this,
@@ -131,8 +125,7 @@ abstract class ExtModule(
         SpecifiedDirection.Unspecified,
         params,
         getKnownLayers,
-        getRequirements,
-        bbDebugInfo
+        getRequirements
       )
     _component = Some(component)
     _component

@@ -26,6 +26,10 @@ class DebugMetaSpec extends AnyFlatSpec with Matchers {
   }
 
   it should "automatically capture debug metadata for created components" in {
+    assume(
+      chisel3.BuildInfo.scalaVersion.startsWith("2."),
+      "Automatic debug metadata capture via compiler plugin is only supported in Scala 2"
+    )
     class TestModule extends RawModule {
       val w = Wire(UInt(8.W))
       // After the fix, debug metadata is automatically captured for all components
@@ -34,7 +38,7 @@ class DebugMetaSpec extends AnyFlatSpec with Matchers {
       meta.get.className shouldBe "UInt"
     }
 
-    circt.stage.ChiselStage.emitCHIRRTL(new TestModule)
+    circt.stage.ChiselStage.emitCHIRRTL(new TestModule, args = Array("--emit-debug-type-info"))
   }
 
   it should "record debug meta info during elaboration" in {
@@ -49,7 +53,7 @@ class DebugMetaSpec extends AnyFlatSpec with Matchers {
       infoOpt.get.className shouldBe "UInt"
     }
 
-    circt.stage.ChiselStage.emitCHIRRTL(new TestModule)
+    circt.stage.ChiselStage.emitCHIRRTL(new TestModule, args = Array("--emit-debug-type-info"))
 
     // Verify the capture worked
     capturedInfo shouldBe defined

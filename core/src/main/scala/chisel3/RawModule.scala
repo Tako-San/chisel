@@ -166,7 +166,7 @@ abstract class RawModule extends BaseModule {
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
 
-    if (Builder.debugMetaEmitterEnabled.value) {
+    if (Builder.debugMetaEmitterEnabled.get()) {
       DebugMetaEmitter.emitModuleMeta(_ids)(chisel3.experimental.UnlocatableSourceInfo)
     }
 

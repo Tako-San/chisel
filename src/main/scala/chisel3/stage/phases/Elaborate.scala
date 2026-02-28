@@ -63,9 +63,17 @@ class Elaborate extends Phase {
           )
         val (elaboratedCircuit, dut) = {
           val enableDebugTypes = chiselOptions.emitDebugMetaInfo
-          Builder.debugMetaEmitterEnabled.withValue(enableDebugTypes) {
-            Builder.debugMetaInfo.withValue(new mutable.HashMap[Long, Builder.DebugMeta]()) {
-              Builder.build(Module(gen()), context)
+          val oldEmitterEnabled = Builder.debugMetaEmitterEnabled.get()
+          if (enableDebugTypes) {
+            Builder.openDebugMetaSession()
+            Builder.debugMetaEmitterEnabled.set(true)
+          }
+          try {
+            Builder.build(Module(gen()), context)
+          } finally {
+            if (enableDebugTypes) {
+              Builder.debugMetaEmitterEnabled.set(oldEmitterEnabled)
+              Builder.closeDebugMetaSession()
             }
           }
         }

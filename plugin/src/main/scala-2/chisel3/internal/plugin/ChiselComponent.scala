@@ -281,7 +281,6 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
     }
 
     private def wrapWithDebugRecording(dd: ValDef, tpe: Type, named: Tree): Tree = {
-      if (!arguments.emitDebugMetaInfo) return named
       if (!matchHasIdData(tpe) && !matchHasIdModule(tpe)) return named
 
       val className = Literal(Constant(tpe.typeSymbol.name.toString))
