@@ -152,7 +152,7 @@ Emits type information for signals (ports, wires, registers, etc.).
   "params":     String,   // optional: human-readable constructor params summary
   "fields": {             // optional: for Bundle types
     "<fieldName>": {
-      "type":      String,   // required
+      "typeName":  String,   // required: Scala class name of the field type
       "width":     String,   // required
       "direction": String,   // required
       // ... nested "fields"/"vecLength"/"element" recursively
@@ -208,6 +208,11 @@ Emits module-level information including constructor parameters.
   }
 }
 ```
+
+> **Note on parameter names**: Due to Scala 2 AST limitations, constructor
+> parameter names are not available at compile time. Parameters are serialized
+> with positional keys `"arg0"`, `"arg1"`, etc. Consuming tools must correlate
+> parameter positions with the class definition to recover semantic names.
 
 ### Downstream Consumers
 

@@ -37,15 +37,6 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
 
     private val CtorParamSerializationWarning = "Failed to serialize constructor parameter"
 
-    private def shouldMatchHasId(bases: Tree*): Type => Boolean = {
-      val cache = mutable.HashMap.empty[Type, Boolean]
-      val baseTypes = bases.map(inferType)
-
-      { q: Type =>
-        cache.getOrElseUpdate(q, baseTypes.exists(q <:< _))
-      }
-    }
-
     private def shouldMatchGen(bases: Tree*): Type => Boolean = {
       val cache = mutable.HashMap.empty[Type, Boolean]
       val baseTypes = bases.map(inferType)
@@ -112,14 +103,14 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       )
     private val shouldMatchModule:   Type => Boolean = shouldMatchGen(tq"chisel3.experimental.BaseModule")
     private val shouldMatchInstance: Type => Boolean = shouldMatchGen(tq"chisel3.experimental.hierarchy.Instance[_]")
-    private val matchHasIdData: Type => Boolean = shouldMatchHasId(
+    private val matchHasIdData: Type => Boolean = shouldMatchGen(
       tq"chisel3.Data",
       tq"chisel3.MemBase[_]",
       tq"chisel3.VerificationStatement",
       tq"chisel3.properties.DynamicObject",
       tq"chisel3.Disable"
     )
-    private val matchHasIdModule: Type => Boolean = shouldMatchHasId(tq"chisel3.experimental.BaseModule")
+    private val matchHasIdModule: Type => Boolean = shouldMatchGen(tq"chisel3.experimental.BaseModule")
     private val shouldMatchChiselPrefixed: Type => Boolean =
       shouldMatchGen(
         tq"chisel3.experimental.AffectsChiselPrefix"
@@ -281,8 +272,6 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
     }
 
     private def wrapWithDebugRecording(dd: ValDef, tpe: Type, named: Tree): Tree = {
-      if (!matchHasIdData(tpe) && !matchHasIdModule(tpe)) return named
-
       val className = Literal(Constant(tpe.typeSymbol.name.toString))
       val params = Literal(Constant(extractCtorParams(dd.rhs)))
       val sourceFile = Literal(Constant(dd.pos.source.file.name))

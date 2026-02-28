@@ -1,3 +1,4 @@
+// REQUIRES: scala-2
 // RUN: scala-cli --server=false --java-home=%JAVAHOME --extra-jars=%RUNCLASSPATH --scala-version=%SCALAVERSION --scala-option="-Xplugin:%SCALAPLUGINJARS" %s | FileCheck %s
 // SPDX-License-Identifier: Apache-2.0
 

@@ -10,7 +10,7 @@ import scala.sys.process._
 import java.nio.file._
 import java.nio.charset.StandardCharsets
 
-class FirtoolRoundTripSpec extends AnyFlatSpec with Matchers {
+class FirtoolCompatibilitySpec extends AnyFlatSpec with Matchers {
 
   // ── Module definitions ──
   class TestModule extends RawModule {
@@ -19,8 +19,8 @@ class FirtoolRoundTripSpec extends AnyFlatSpec with Matchers {
     out := in
   }
 
-  // ── Test: Round‑trip with firtool using --emit-debug-type-info ──
-  it should "round‑trip CHIRRTL through firtool with --emit-debug-type-info" in {
+  // ── Test: Compatibility with firtool using --allow-unrecognized-intrinsic ──
+  it should "accept CHIRRTL with debug intrinsics via --allow-unrecognized-intrinsic" in {
     // Use ChiselStage to emit CHIRRTL with debug type info
     val chirrtl = ChiselStage.emitCHIRRTL(
       gen = new TestModule,

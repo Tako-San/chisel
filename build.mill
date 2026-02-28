@@ -309,8 +309,8 @@ trait Chisel extends CrossSbtModule with HasScala2MacroAnno with HasScalaPlugin 
   override def scalacOptions = Task {
     if (v.isScala3(crossScalaVersion)) super.scalacOptions()
     else super.scalacOptions() ++ v.scala2CommonOptions(Nil)
-    // Флаг -P:chiselplugin:emitDebugTypeInfo НЕ вшивается в библиотеку.
-    // Downstream-пользователь добавляет его сам через scalacOptions своего проекта.
+    // The -P:chiselplugin:emitDebugTypeInfo flag is intentionally NOT baked into
+    // the library scalacOptions. Downstream users add it to their own project.
   }
 
   override def moduleDeps = super.moduleDeps ++ Seq(coreModule, svsimModule)
@@ -328,8 +328,8 @@ trait Chisel extends CrossSbtModule with HasScala2MacroAnno with HasScalaPlugin 
     override def scalacOptions = Task {
       val baseOpts = super.scalacOptions() :+ "-Wconf:cat=other-implicit-type:s"
       baseOpts
-      // Флаг -P:chiselplugin:emitDebugTypeInfo НЕ вшивается в тестовый модуль.
-      // Специфические debug-тесты используют свои own scalacOptions.
+      // The -P:chiselplugin:emitDebugTypeInfo flag is not applied globally to the
+      // test module; debug-specific tests supply it via their own scalacOptions.
     }
 
     override def testForkGrouping = discoveredTestClasses().grouped(8).toSeq

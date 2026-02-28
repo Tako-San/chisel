@@ -279,12 +279,12 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     // Note: empty modules may or may not have ctorParams field, so we just check the module name exists
   }
 
-  it should "emit correct direction and type for deeply nested bundles" in {
+  it should "emit correct direction and typeName for deeply nested bundles" in {
     val chirrtl = emitWithDebug(new NestedBundleModule)
     chirrtl should include("circt_debug_typetag")
     chirrtl should include("\\\"direction\\\":\\\"input\\\"")
-    // Nested bundle fields use 'type' inside the fields object, not 'className'
-    chirrtl should include("\\\"type\\\":\\\"Bool\\\"")
+    // Nested bundle fields use 'typeName' inside the fields object, not 'className'
+    chirrtl should include("\\\"typeName\\\":\\\"Bool\\\"")
   }
 
   it should "include correct Bool type metadata for ports and registers" in {

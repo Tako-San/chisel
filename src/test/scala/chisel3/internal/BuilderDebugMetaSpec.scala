@@ -5,7 +5,7 @@ import chisel3.internal.Builder
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-class DebugMetaSpec extends AnyFlatSpec with Matchers {
+class BuilderDebugMetaSpec extends AnyFlatSpec with Matchers {
   behavior.of("Builder.DebugMeta")
 
   it should "store and retrieve debug meta info by HasId._id" in {
