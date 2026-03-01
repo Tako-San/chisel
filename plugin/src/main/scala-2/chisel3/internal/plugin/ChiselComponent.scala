@@ -302,7 +302,7 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
           val str = stringFromTermName(name)
           val newRHS = transform(rhs) // chisel3.withName
           val named = q"chisel3.withName($str)($newRHS)"
-          val wrapped = if (isHasIdData) wrapWithDebugRecording(dd, tpe, named) else named
+          val wrapped = if (isHasIdData && arguments.emitDebugMetaInfo.get) wrapWithDebugRecording(dd, tpe, named) else named
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
         // If a Data or a Memory, get the name and a prefix
@@ -322,7 +322,7 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
               prefixed
             }
 
-          val wrapped = if (isHasIdData) wrapWithDebugRecording(dd, tpe, named) else named
+          val wrapped = if (isHasIdData && arguments.emitDebugMetaInfo.get) wrapWithDebugRecording(dd, tpe, named) else named
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
         // If a module, just get a name but no prefix and record debug info
@@ -330,7 +330,7 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
           val str = stringFromTermName(name)
           val newRHS = transform(rhs)
           val named = q"chisel3.withName($str)($newRHS)"
-          val wrapped = wrapWithDebugRecording(dd, tpe, named)
+          val wrapped = if (arguments.emitDebugMetaInfo.get) wrapWithDebugRecording(dd, tpe, named) else named
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
         // If an instance, just get a name but no prefix (no debug recording - Instance doesn't extend HasId)
