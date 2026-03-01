@@ -133,4 +133,36 @@ class DebugMetaSpec extends AnyFlatSpec with Matchers {
     chirrtl should include("circt_debug_moduleinfo")
     chirrtl should include("MyBB")
   }
+
+  it should "emit enumType reference in typetag (not inline enumDef)" in {
+    object MyState extends ChiselEnum {
+      val Idle = Value
+      val Running = Value
+      val Stopped = Value
+    }
+
+    class EnumModule extends Module {
+      val io = IO(new Bundle {
+        val stateInput = Input(MyState())
+        val stateOutput = Output(MyState())
+      })
+      io.stateOutput := io.stateInput
+    }
+
+    val chirrtl = elaborate(new EnumModule)
+    // Should contain the separate enumdef intrinsic
+    chirrtl should include("circt_debug_enumdef")
+    // Enum name may have a suffix (e.g., MyState$1) in Scala 2 due to anonymous class naming
+    chirrtl should include("\\\"name\\\":\\\"MyState")
+    
+    // Should have enumType reference(s) in the output
+    // These are embedded in the bundle field structure JSON for enum type fields
+    chirrtl should include("\\\"enumType\\\"")
+    
+    // Inline definition should NOT be in typetag
+    val typetagLines = chirrtl.split("\n").filter(_.contains("circt_debug_typetag"))
+    typetagLines.foreach { line =>
+      line should not include "\"enumDef\""
+    }
+  }
 }

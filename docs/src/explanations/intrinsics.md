@@ -160,15 +160,7 @@ Emits type information for signals (ports, wires, registers, etc.).
   },
   "vecLength": Number,       // optional: for Vec
   "element": { ... },        // optional: for Vec element type
-  "enumDef": {               // optional: for ChiselEnum
-    "name":     String,      // required: enum type name
-    "variants": [            // required: array of variant objects
-      {
-        "name":  String,     // variant name
-        "value": Number      // numeric value
-      }
-    ]
-  }
+  "enumType": String         // optional: for ChiselEnum - references enum type name defined via circt_debug_enumdef
 }
 ```
 
@@ -213,6 +205,67 @@ Emits module-level information including constructor parameters.
 > parameter names are not available at compile time. Parameters are serialized
 > with positional keys `"arg0"`, `"arg1"`, etc. Consuming tools must correlate
 > parameter positions with the class definition to recover semantic names.
+
+### `circt_debug_enumdef`
+
+Emits enum type definitions for ChiselEnum types. Each unique enum type is emitted once per compilation session, and `circt_debug_typetag` references the enum type by name.
+
+**JSON Schema:**
+
+```json
+{
+  "name":     String,      // required: enum type name (e.g., "MyState", "Color")
+  "variants": [            // required: array of variant objects
+    {
+      "name":  String,     // required: variant name (e.g., "Idle", "Running")
+      "value": Number      // required: numeric value of the variant
+    }
+  ]
+}
+```
+
+**Example:**
+
+```scala
+object MyState extends ChiselEnum {
+  val Idle = Value
+  val Running = Value
+  val Stopped = Value
+}
+
+class EnumModule extends Module {
+  val io = IO(Input(MyState()))
+  // ...
+}
+```
+
+Emits:
+
+```json
+{
+  "name": "MyState",
+  "variants": [
+    { "name": "Idle", "value": 0 },
+    { "name": "Running", "value": 1 },
+    { "name": "Stopped", "value": 2 }
+  ]
+}
+```
+
+The `circt_debug_typetag` for the enum port would reference this definition:
+
+```json
+{
+  "className": "MyState",
+  "width": "2",
+  "binding": "port",
+  "direction": "input",
+  "sourceLoc": "EnumModule.scala:4",
+  "enumType": "MyState"
+}
+```
+
+> **Note**: Enum definitions are deduplicated - if the same enum type is used multiple times in a circuit (e.g., multiple ports of the same enum type), the enum definition is emitted only once.
 
 ### Downstream Consumers
 

@@ -30,7 +30,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   private final val JsonFields = "fields"
   private final val JsonVecLength = "vecLength"
   private final val JsonElement = "element"
-  private final val JsonEnumDef = "enumDef"
   private final val JsonName = "name"
   private final val JsonVariants = "variants"
 
@@ -192,12 +191,16 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   private def collectEnumValues(factory: AnyRef): Option[Seq[EnumType]] =
     Option(factory).collect { case f: ChiselEnum => f.all.collect { case e: EnumType => e } }
 
-  private def buildBaseFieldObject(data: Data): ujson.Obj =
-    ujson.Obj(
+  private def buildBaseFieldObject(data: Data, enumNameOpt: Option[String] = None): ujson.Obj = {
+    val obj = ujson.Obj(
       "typeName" -> ujson.Str(data.getClass.getSimpleName.stripSuffix("$")),
       "width" -> ujson.Str(widthStr(data)),
       "direction" -> ujson.Str(directionStr(data))
     )
+    // Add enumType reference if this is an enum field
+    enumNameOpt.foreach(enumName => obj("enumType") = ujson.Str(enumName))
+    obj
+  }
 
   private def buildJson(data: Data)(implicit si: SourceInfo): String = {
     // Emit enum definition if needed and get enum name for reference
@@ -301,10 +304,10 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     case _ => None
   }
 
-  private def buildStructureJson(data: Data): Option[Seq[(String, ujson.Value)]] =
+  private def buildStructureJson(data: Data)(implicit si: SourceInfo): Option[Seq[(String, ujson.Value)]] =
     buildStructureJson(data, depth = 0)
 
-  private def buildStructureJson(data: Data, depth: Int): Option[Seq[(String, ujson.Value)]] = {
+  private def buildStructureJson(data: Data, depth: Int)(implicit si: SourceInfo): Option[Seq[(String, ujson.Value)]] = {
     if (depth >= MaxStructureDepth) {
       logger.warn(
         s"[DebugMetaEmitter] Max structure depth ($MaxStructureDepth) exceeded for ${data.getClass.getSimpleName}. " +
@@ -330,7 +333,8 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       case r: Record @unchecked if r.isInstanceOf[HasDebugKind] =>
         val fields = ujson.Obj()
         r.elements.foreach { case (name, fieldData) =>
-          val fObj = buildBaseFieldObject(fieldData)
+          val enumNameOpt = emitEnumDefIfNeeded(fieldData)
+          val fObj = buildBaseFieldObject(fieldData, enumNameOpt)
           for {
             structureEntries <- buildStructureJson(fieldData, depth + 1)
             (key, value) <- structureEntries
@@ -343,7 +347,8 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       case r: Record =>
         val fields = ujson.Obj()
         r.elements.foreach { case (name, fieldData) =>
-          val fObj = buildBaseFieldObject(fieldData)
+          val enumNameOpt = emitEnumDefIfNeeded(fieldData)
+          val fObj = buildBaseFieldObject(fieldData, enumNameOpt)
           for {
             structureEntries <- buildStructureJson(fieldData, depth + 1)
             (key, value) <- structureEntries
@@ -355,7 +360,8 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
       case v: Vec[_] if v.length > 0 =>
         val elem = v.sample_element
-        val elemObj = buildBaseFieldObject(elem)
+        val enumNameOpt = emitEnumDefIfNeeded(elem)
+        val elemObj = buildBaseFieldObject(elem, enumNameOpt)
         for {
           structureEntries <- buildStructureJson(elem, depth + 1)
           (key, value) <- structureEntries
@@ -374,7 +380,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     }
   }
 
-  private def buildMemJson(mem: MemBase[_]): String = {
+  private def buildMemJson(mem: MemBase[_])(implicit si: SourceInfo): String = {
     val memKind = mem match {
       case _: SyncReadMem[_] => "SyncReadMem"
       case _ => "Mem"
@@ -385,7 +391,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       case _ => None
     }
 
-    val dataTypeJson = buildTypeJson(mem.t.asInstanceOf[Data])
+    val dataTypeJson = buildTypeJson(mem.t.asInstanceOf[Data])(si)
 
     val sourceLocOpt =
       Builder
@@ -412,7 +418,16 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     ujson.write(finalObj)
   }
 
-  private def buildTypeJson(t: Data): ujson.Value = t match {
+  private def buildTypeJson(t: Data)(implicit si: SourceInfo): ujson.Value = t match {
+    case e: EnumType =>
+      val enumNameOpt = emitEnumDefIfNeeded(e)
+      val obj = ujson.Obj(
+        "kind" -> ujson.Str(e.getClass.getSimpleName.stripSuffix("$")),
+        "width" -> ujson.Str(widthStr(e))
+      )
+      enumNameOpt.foreach(name => obj("enumType") = ujson.Str(name))
+      obj
+
     case r: Record =>
       val fields = ujson.Obj()
       r.elements.foreach { case (name, fieldData) =>
