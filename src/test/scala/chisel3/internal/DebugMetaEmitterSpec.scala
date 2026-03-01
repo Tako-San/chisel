@@ -200,7 +200,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
 
   it should "emit enum variant map for ChiselEnum" in {
     val chirrtl = emitWithDebug(new EnumModule)
-    chirrtl should include("\\\"enumDef\\\"")
+    chirrtl should include("circt_debug_enumdef")
     chirrtl should include("\\\"name\\\":\\\"MyState\\\"")
     chirrtl should include("\\\"name\\\":\\\"IDLE\\\"")
     chirrtl should include("\\\"name\\\":\\\"RUN\\\"")
@@ -240,11 +240,23 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     keys should contain("className")
   }
 
-  it should "validate enum JSON payload contains enumDef" in {
+  it should "validate enum JSON payload contains enumType and circt_debug_enumdef is emitted" in {
     val chirrtl = emitWithDebug(new EnumModule)
-    val payloads = extractPayloads(chirrtl, "circt_debug_typetag")
-    payloads should not be empty
-    payloads.exists(_.obj.contains("enumDef")) shouldBe true
+    // Verify that typetag contains enumType field (reference to enum)
+    val typetags = extractPayloads(chirrtl, "circt_debug_typetag")
+    typetags should not be empty
+    chirrtl should include("\\\"enumType\\\"")
+    chirrtl should include("\\\"enumType\\\":\\\"MyState\\\"")
+    // Verify that separate circt_debug_enumdef intrinsic is emitted
+    chirrtl should include("circt_debug_enumdef")
+    val enumdefs = extractPayloads(chirrtl, "circt_debug_enumdef")
+    enumdefs should not be empty
+    // Extract and validate the enumdef payload content
+    chirrtl should include("\\\"name\\\":\\\"MyState\\\"")
+    chirrtl should include("\\\"variants\\\"")
+    // Verify the enumdef has the correct structure by checking it's in the chirrtl output
+    val enumdefLines = chirrtl.split("\n").filter(_.contains("circt_debug_enumdef"))
+    enumdefLines should have size 1
   }
 
   it should "emit required fields according to DebugMetaEmitter JSON contract (typetag)" in {
