@@ -154,15 +154,15 @@ class DebugMetaSpec extends AnyFlatSpec with Matchers {
     chirrtl should include("circt_debug_enumdef")
     // Enum name may have a suffix (e.g., MyState$1) in Scala 2 due to anonymous class naming
     chirrtl should include("\\\"name\\\":\\\"MyState")
-    
+
     // Should have enumType reference(s) in the output
     // These are embedded in the bundle field structure JSON for enum type fields
     chirrtl should include("\\\"enumType\\\"")
-    
+
     // Inline definition should NOT be in typetag
     val typetagLines = chirrtl.split("\n").filter(_.contains("circt_debug_typetag"))
     typetagLines.foreach { line =>
-      line should not include "\"enumDef\""
+      (line should not).include("\"enumDef\"")
     }
   }
 }

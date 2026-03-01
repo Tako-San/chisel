@@ -284,6 +284,17 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
 
   // ── Edge case tests ──
 
+  it should "NOT emit ctorParams key for module with no constructor args" in {
+    class NoArgModule extends RawModule {
+      val in = IO(Input(UInt(8.W))).suggestName("in")
+    }
+    val chirrtl = emitWithDebug(new NoArgModule)
+    val payloads = extractPayloads(chirrtl, "circt_debug_moduleinfo")
+    payloads.foreach { json =>
+      json.obj.keySet should not contain "ctorParams"
+    }
+  }
+
   it should "emit circt_debug_moduleinfo for empty module with empty ctorParams" in {
     val chirrtl = emitWithDebug(new EmptyModule)
     chirrtl should include("circt_debug_moduleinfo")

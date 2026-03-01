@@ -280,7 +280,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       val ctorParamJsonLiteral: Tree =
         if (shouldMatchModule(tpe)) {
           val json = extractCtorParamsAsJson(dd.rhs)
-          q"if ($json.isEmpty) _root_.scala.None else _root_.scala.Some($json)"
+          val emptyJsonStr = Literal(Constant("{}"))
+          q"if ($json == $emptyJsonStr) _root_.scala.None else _root_.scala.Some($json)"
         } else q"_root_.scala.None"
 
       q"""chisel3.debug.DebugMeta.recordWithReturn($named, $className, $params, $sourceFile, $sourceLine, $ctorParamJsonLiteral)"""
