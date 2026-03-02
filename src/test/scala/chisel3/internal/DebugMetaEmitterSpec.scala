@@ -70,6 +70,10 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     val state = RegInit(MyState.IDLE)
   }
 
+  class MemModule extends Module {
+    val m = SyncReadMem(16, UInt(8.W))
+  }
+
   class NestedModule extends RawModule {
     val io = IO(Input(Vec(2, new MyBundle))).suggestName("io")
   }
@@ -200,7 +204,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
 
   it should "emit enum variant map for ChiselEnum" in {
     val chirrtl = emitWithDebug(new EnumModule)
-    chirrtl should include("\\\"enumDef\\\"")
+    chirrtl should include("circt_debug_enumdef")
     chirrtl should include("\\\"name\\\":\\\"MyState\\\"")
     chirrtl should include("\\\"name\\\":\\\"IDLE\\\"")
     chirrtl should include("\\\"name\\\":\\\"RUN\\\"")
@@ -240,11 +244,31 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     keys should contain("className")
   }
 
-  it should "validate enum JSON payload contains enumDef" in {
+  it should "validate enum JSON payload contains enumType and circt_debug_enumdef is emitted" in {
     val chirrtl = emitWithDebug(new EnumModule)
-    val payloads = extractPayloads(chirrtl, "circt_debug_typetag")
-    payloads should not be empty
-    payloads.exists(_.obj.contains("enumDef")) shouldBe true
+    // Verify that typetag contains enumType field (reference to enum)
+    val typetags = extractPayloads(chirrtl, "circt_debug_typetag")
+    typetags should not be empty
+    chirrtl should include("\\\"enumType\\\"")
+    chirrtl should include("\\\"enumType\\\":\\\"MyState\\\"")
+    // Verify that separate circt_debug_enumdef intrinsic is emitted
+    chirrtl should include("circt_debug_enumdef")
+    val enumdefs = extractPayloads(chirrtl, "circt_debug_enumdef")
+    enumdefs should not be empty
+    // Extract and validate the enumdef payload content
+    chirrtl should include("\\\"name\\\":\\\"MyState\\\"")
+    chirrtl should include("\\\"variants\\\"")
+    // Verify the enumdef has the correct structure by checking it's in the chirrtl output
+    val enumdefLines = chirrtl.split("\n").filter(_.contains("circt_debug_enumdef"))
+    enumdefLines should have size 1
+  }
+
+  it should "emit circt_debug_meminfo for SyncReadMem" in {
+    val chirrtl = emitWithDebug(new MemModule)
+    chirrtl should include("circt_debug_meminfo")
+    chirrtl should include("\\\"kind\\\":\\\"mem\\\"")
+    chirrtl should include("\\\"memoryKind\\\":\\\"SyncReadMem\\\"")
+    chirrtl should include("\\\"depth\\\":16")
   }
 
   it should "emit required fields according to DebugMetaEmitter JSON contract (typetag)" in {
@@ -271,6 +295,17 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
   }
 
   // ── Edge case tests ──
+
+  it should "NOT emit ctorParams key for module with no constructor args" in {
+    class NoArgModule extends RawModule {
+      val in = IO(Input(UInt(8.W))).suggestName("in")
+    }
+    val chirrtl = emitWithDebug(new NoArgModule)
+    val payloads = extractPayloads(chirrtl, "circt_debug_moduleinfo")
+    payloads.foreach { json =>
+      json.obj.keySet should not contain "ctorParams"
+    }
+  }
 
   it should "emit circt_debug_moduleinfo for empty module with empty ctorParams" in {
     val chirrtl = emitWithDebug(new EmptyModule)

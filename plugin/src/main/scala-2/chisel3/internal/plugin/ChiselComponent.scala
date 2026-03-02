@@ -110,7 +110,6 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       tq"chisel3.properties.DynamicObject",
       tq"chisel3.Disable"
     )
-    private val matchHasIdModule: Type => Boolean = shouldMatchGen(tq"chisel3.experimental.BaseModule")
     private val shouldMatchChiselPrefixed: Type => Boolean =
       shouldMatchGen(
         tq"chisel3.experimental.AffectsChiselPrefix"
@@ -218,39 +217,45 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
         arg.toString
     }
 
-    private def extractCtorParamsCommon(rhs: Tree, fmt: String): String = {
+    private def extractCtorParams(rhs: Tree): String = {
       val args = findNewArgs(rhs).getOrElse(Nil)
       if (args.isEmpty) {
-        if (fmt == "json") "{}" else ""
+        ""
+      } else {
+        args.zipWithIndex.flatMap { case (arg, idx) =>
+          try {
+            val valueString = serializeArg(arg)
+            if (valueString.length > MaxCtorParamLength)
+              Some(valueString.substring(0, MaxCtorParamLength) + "...")
+            else Some(valueString)
+          } catch {
+            case e: Exception =>
+              global.reporter.warning(arg.pos, s"$CtorParamSerializationWarning: ${e.getMessage}")
+              None
+          }
+        }.mkString(",")
+      }
+    }
+
+    private def extractCtorParamsAsJson(rhs: Tree): String = {
+      val args = findNewArgs(rhs).getOrElse(Nil)
+      if (args.isEmpty) {
+        "{}"
       } else {
         val result = args.zipWithIndex.flatMap { case (arg, idx) =>
           try {
             val valueString = serializeArg(arg)
-            if (fmt == "json") {
-              val escaped = escapeJsonString(valueString)
-              Some(s""""arg$idx":"$escaped"""")
-            } else {
-              if (valueString.length > MaxCtorParamLength)
-                Some(valueString.substring(0, MaxCtorParamLength) + "...")
-              else Some(valueString)
-            }
+            val escaped = escapeJsonString(valueString)
+            Some(s""""arg$idx":"$escaped"""")
           } catch {
             case e: Exception =>
               global.reporter.warning(arg.pos, s"$CtorParamSerializationWarning: ${e.getMessage}")
               None
           }
         }
-        if (fmt == "json") {
-          if (result.isEmpty) "{}" else s"{${result.mkString(",")}}"
-        } else {
-          result.mkString(",")
-        }
+        if (result.isEmpty) "{}" else s"{${result.mkString(",")}}"
       }
     }
-
-    private def extractCtorParams(rhs: Tree): String = extractCtorParamsCommon(rhs, "csv")
-
-    private def extractCtorParamsAsJson(rhs: Tree): String = extractCtorParamsCommon(rhs, "json")
 
     private def escapeJsonString(s: String): String = {
       val sb = new StringBuilder()
@@ -280,7 +285,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       val ctorParamJsonLiteral: Tree =
         if (shouldMatchModule(tpe)) {
           val json = extractCtorParamsAsJson(dd.rhs)
-          q"if ($json.isEmpty) _root_.scala.None else _root_.scala.Some($json)"
+          val emptyJsonStr = Literal(Constant("{}"))
+          q"if ($json == $emptyJsonStr) _root_.scala.None else _root_.scala.Some($json)"
         } else q"_root_.scala.None"
 
       q"""chisel3.debug.DebugMeta.recordWithReturn($named, $className, $params, $sourceFile, $sourceLine, $ctorParamJsonLiteral)"""
@@ -294,14 +300,15 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
         val isData = shouldMatchData(tpe)
         val isNamedComp = isData || shouldMatchNamedComp(tpe)
         val isPrefixed = isNamedComp || shouldMatchChiselPrefixed(tpe)
-        val isHasIdData = matchHasIdData(tpe) || matchHasIdModule(tpe)
+        val isHasIdData = matchHasIdData(tpe)
 
         // If a Data and in a Bundle, just get the name but not a prefix
         if (isData && inBundle(dd)) {
           val str = stringFromTermName(name)
           val newRHS = transform(rhs) // chisel3.withName
           val named = q"chisel3.withName($str)($newRHS)"
-          val wrapped = if (isHasIdData) wrapWithDebugRecording(dd, tpe, named) else named
+          val wrapped =
+            if (isHasIdData && arguments.emitDebugMetaInfo.get) wrapWithDebugRecording(dd, tpe, named) else named
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
         // If a Data or a Memory, get the name and a prefix
@@ -321,7 +328,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
               prefixed
             }
 
-          val wrapped = if (isHasIdData) wrapWithDebugRecording(dd, tpe, named) else named
+          val wrapped =
+            if (isHasIdData && arguments.emitDebugMetaInfo.get) wrapWithDebugRecording(dd, tpe, named) else named
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
         // If a module, just get a name but no prefix and record debug info
@@ -329,7 +337,7 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
           val str = stringFromTermName(name)
           val newRHS = transform(rhs)
           val named = q"chisel3.withName($str)($newRHS)"
-          val wrapped = wrapWithDebugRecording(dd, tpe, named)
+          val wrapped = if (arguments.emitDebugMetaInfo.get) wrapWithDebugRecording(dd, tpe, named) else named
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
         // If an instance, just get a name but no prefix (no debug recording - Instance doesn't extend HasId)
