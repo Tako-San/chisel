@@ -39,6 +39,7 @@ package object stage {
           case IncludeInlineTestsWithNameAnnotation(glob) =>
             c.copy(inlineTestIncluder = c.inlineTestIncluder.includeTest(glob))
           case SuppressSourceInfoAnnotation => c.copy(suppressSourceInfo = true)
+          case EmitDebugMetaInfoAnnotation  => c.copy(emitDebugMetaInfo = true)
         }
       }
 

@@ -14,3 +14,9 @@ config.substitutions = [
     ('%JAVALIBRARYPATH', ':'.join(config.java_library_path))
 ]
 config.test_source_root = os.path.dirname(__file__)
+
+# Add feature detection for Scala 2 vs Scala 3
+if config.scala_version.startswith('2.'):
+    config.available_features.add('scala-2')
+else:
+    config.available_features.add('scala-3')

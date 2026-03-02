@@ -622,6 +622,44 @@ private[chisel3] object Builder extends LazyLogging {
   def unnamedViews:  ArrayBuffer[Data] = dynamicContext.unnamedViews
   def viewNamespace: Namespace = chiselContext.get.viewNamespace
 
+  case class DebugMeta(
+    className:     String,
+    params:        String,
+    sourceFile:    String,
+    sourceLine:    Int,
+    ctorParamJson: Option[String] = None
+  )
+
+  private[chisel3] val debugMetaInfo =
+    ThreadLocal.withInitial[Option[mutable.HashMap[Long, DebugMeta]]](() => None)
+
+  private[chisel3] def recordDebugMeta(
+    target:        HasId,
+    className:     String,
+    params:        String,
+    sourceFile:    String,
+    sourceLine:    Int,
+    ctorParamJson: Option[String] = None
+  ): Unit =
+    debugMetaInfo.get().foreach { map =>
+      map(target._id) = DebugMeta(className, params, sourceFile, sourceLine, ctorParamJson)
+    }
+
+  private[chisel3] def getDebugMeta(target: HasId): Option[DebugMeta] =
+    debugMetaInfo.get().flatMap(_.get(target._id))
+
+  /** Open a debug metadata session (to be called at the beginning of Elaborate) */
+  private[chisel3] def openDebugMetaSession(): Unit =
+    debugMetaInfo.set(Some(new mutable.HashMap[Long, DebugMeta]()))
+
+  /** Close and clear a debug metadata session (to be called in finally block of Elaborate) */
+  private[chisel3] def closeDebugMetaSession(): Unit = {
+    debugMetaInfo.set(None)
+    // debugMetaEmitterEnabled is NOT reset here - it is managed separately
+  }
+
+  private[chisel3] val debugMetaEmitterEnabled = ThreadLocal.withInitial[Boolean](() => false)
+
   // Puts a prefix string onto the prefix stack
   def pushPrefix(d: String): Unit = {
     val context = chiselContext.get()

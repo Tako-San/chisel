@@ -147,7 +147,20 @@ class SRAMInterface[T <: Data](
   val numReadwritePorts: Int,
   val masked:            Boolean = false,
   val hasDescription:    Boolean = false
-) extends Bundle {
+) extends Bundle
+    with chisel3.internal.HasDebugSramMeta {
+
+  override def debugSramDepth:         BigInt = memSize
+  override def debugSramNumReadPorts:  Int = numReadPorts
+  override def debugSramNumWritePorts: Int = numWritePorts
+  override def debugSramNumRWPorts:    Int = numReadwritePorts
+  override def debugSramMasked:        Boolean = masked
+  override def debugSramMaskGranularity: Int = if (masked) {
+    tpe match {
+      case v: Vec[_] => v.sample_element.getWidth
+      case _ => 0
+    }
+  } else 0
 
   /** Public accessor for data type of this interface. */
   def dataType: T = tpe

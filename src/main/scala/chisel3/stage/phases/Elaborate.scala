@@ -6,7 +6,7 @@ import chisel3.Module
 import chisel3.experimental.hierarchy.core.Definition
 import chisel3.experimental.BaseModule
 import chisel3.internal.ExceptionHelpers.ThrowableHelpers
-import chisel3.internal.{Builder, BuilderContextCache, DynamicContext, ElaborationTrace}
+import chisel3.internal.{Builder, BuilderContextCache, DebugMetaEmitter, DynamicContext, ElaborationTrace}
 import chisel3.internal.firrtl.ir
 import chisel3.stage.{
   ChiselCircuitAnnotation,
@@ -62,7 +62,21 @@ class Elaborate extends Phase {
             elaborationTrace
           )
         val (elaboratedCircuit, dut) = {
-          Builder.build(Module(gen()), context)
+          val enableDebugTypes = chiselOptions.emitDebugMetaInfo
+          val oldEmitterEnabled = Builder.debugMetaEmitterEnabled.get()
+          if (enableDebugTypes) {
+            Builder.openDebugMetaSession()
+            Builder.debugMetaEmitterEnabled.set(true)
+            DebugMetaEmitter.resetEnumCache()
+          }
+          try {
+            Builder.build(Module(gen()), context)
+          } finally {
+            if (enableDebugTypes) {
+              Builder.debugMetaEmitterEnabled.set(oldEmitterEnabled)
+              Builder.closeDebugMetaSession()
+            }
+          }
         }
         elaborationTrace.finish()
 
