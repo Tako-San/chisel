@@ -14,6 +14,7 @@ import firrtl.annotations.{IsMember, MemoryLoadFileType}
 
 import scala.annotation.nowarn
 import scala.language.reflectiveCalls
+import scala.util.Try
 import chisel3.internal.firrtl.ir
 import chisel3.properties.Class.ClassDefinitionOps
 import chisel3.properties.{Class, ClassType, Path, Property}
@@ -149,18 +150,6 @@ class SRAMInterface[T <: Data](
   val hasDescription:    Boolean = false
 ) extends Bundle
     with chisel3.internal.HasDebugSramMeta {
-
-  override def debugSramDepth:         BigInt = memSize
-  override def debugSramNumReadPorts:  Int = numReadPorts
-  override def debugSramNumWritePorts: Int = numWritePorts
-  override def debugSramNumRWPorts:    Int = numReadwritePorts
-  override def debugSramMasked:        Boolean = masked
-  override def debugSramMaskGranularity: Int = if (masked) {
-    tpe match {
-      case v: Vec[_] => v.sample_element.getWidth
-      case _ => 0
-    }
-  } else 0
 
   /** Public accessor for data type of this interface. */
   def dataType: T = tpe

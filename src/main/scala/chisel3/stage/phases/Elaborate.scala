@@ -59,24 +59,11 @@ class Elaborate extends Phase {
             chiselOptions.inlineTestIncluder,
             chiselOptions.suppressSourceInfo,
             false,
-            elaborationTrace
+            elaborationTrace,
+            emitDebugTypeInfo = chiselOptions.emitDebugTypeInfo
           )
         val (elaboratedCircuit, dut) = {
-          val enableDebugTypes = chiselOptions.emitDebugMetaInfo
-          val oldEmitterEnabled = Builder.debugMetaEmitterEnabled.get()
-          if (enableDebugTypes) {
-            Builder.openDebugMetaSession()
-            Builder.debugMetaEmitterEnabled.set(true)
-            DebugMetaEmitter.resetEnumCache()
-          }
-          try {
-            Builder.build(Module(gen()), context)
-          } finally {
-            if (enableDebugTypes) {
-              Builder.debugMetaEmitterEnabled.set(oldEmitterEnabled)
-              Builder.closeDebugMetaSession()
-            }
-          }
+          Builder.build(Module(gen()), context)
         }
         elaborationTrace.finish()
 

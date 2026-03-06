@@ -116,7 +116,6 @@ abstract class ExtModule(
     val firrtlPorts = getModulePortsAndLocators.map { case (port, sourceInfo, associations) =>
       Port(port, port.specifiedDirection, associations, sourceInfo)
     }
-
     val component =
       DefBlackBox(
         this,

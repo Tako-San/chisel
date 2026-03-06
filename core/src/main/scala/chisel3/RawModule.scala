@@ -4,7 +4,6 @@ package chisel3
 
 import scala.util.Try
 import chisel3.experimental.{BaseModule, OpaqueType, SourceInfo, UnlocatableSourceInfo}
-import chisel3.internal.DebugMetaEmitter
 import chisel3.internal._
 import chisel3.internal.binding._
 import chisel3.experimental.hierarchy.{InstanceClone, ModuleClone}
@@ -166,19 +165,26 @@ abstract class RawModule extends BaseModule {
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
 
-    if (Builder.debugMetaEmitterEnabled.get()) {
-      DebugMetaEmitter.emitModuleMeta(_ids)(chisel3.experimental.UnlocatableSourceInfo)
-    }
-
-    _closed = true
-
-    // Check to make sure that all ports can be named
-    checkPorts()
-
     // Take a second pass through any ids generated during atModuleBodyEnd blocks to finalize names for them.
     for (id <- _ids.view.drop(numInitialIds)) {
       nameId(id)
     }
+
+    // ORDERING INVARIANT:
+    // 1. emitModuleMetaInScope must run after all nameId passes (final names are ready).
+    // 2. _closed must be set even if metadata emission throws - hence try/finally.
+    // 3. checkPorts() must run after _closed = true because it calls
+    //    getModulePortsAndLocators(), which requires the module to be closed.
+    try {
+      if (Builder.debugMetaInfo.isDefined) {
+        internal.DebugMetaEmitter.emitModuleMetaInScope(this, _ids)(_sourceInfo)
+      }
+    } finally {
+      _closed = true
+    }
+
+    // Check to make sure that all ports can be named
+    checkPorts()
 
     val firrtlPorts = getModulePortsAndLocators.map { case (port, sourceInfo, associations) =>
       Port(port, port.specifiedDirection, associations, sourceInfo)

@@ -644,13 +644,15 @@ case object SuppressSourceInfoAnnotation
   * Current intrinsics embed Chisel-level type metadata as JSON in FIRRTL output,
   * consumed downstream by Tywaves, HGDB, and hw-debug-info.json export passes.
   *
+  * @since UNRELEASED
+  * @note This annotation is experimental and subject to change.
   * @see chisel3.internal.DebugMetaEmitter for the JSON payload contract
   */
-case object EmitDebugMetaInfoAnnotation extends NoTargetAnnotation with ChiselOption with HasShellOptions {
+case object EmitDebugTypeInfoAnnotation extends NoTargetAnnotation with ChiselOption with HasShellOptions {
   val options = Seq(
     new ShellOption[Unit](
       longOption = "emit-debug-type-info",
-      toAnnotationSeq = _ => Seq(EmitDebugMetaInfoAnnotation),
+      toAnnotationSeq = _ => Seq(EmitDebugTypeInfoAnnotation),
       helpText = "Emit circt_debug_typetag intrinsics with Chisel type metadata in FIRRTL output"
     )
   )

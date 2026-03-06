@@ -21,7 +21,7 @@ class ChiselOptions private[stage] (
   val elaboratedCircuit:   Option[ElaboratedCircuit] = None,
   val inlineTestIncluder:  InlineTestIncluder = InlineTestIncluder.none,
   val suppressSourceInfo:  Boolean = false,
-  val emitDebugMetaInfo:   Boolean = false
+  val emitDebugTypeInfo:   Boolean = false
 ) {
 
   private[stage] def copy(
@@ -37,7 +37,7 @@ class ChiselOptions private[stage] (
     elaboratedCircuit:   Option[ElaboratedCircuit] = elaboratedCircuit,
     inlineTestIncluder:  InlineTestIncluder = inlineTestIncluder,
     suppressSourceInfo:  Boolean = suppressSourceInfo,
-    emitDebugMetaInfo:   Boolean = emitDebugMetaInfo
+    emitDebugTypeInfo:   Boolean = emitDebugTypeInfo
   ): ChiselOptions = {
 
     new ChiselOptions(
@@ -53,7 +53,7 @@ class ChiselOptions private[stage] (
       elaboratedCircuit = elaboratedCircuit,
       inlineTestIncluder = inlineTestIncluder,
       suppressSourceInfo = suppressSourceInfo,
-      emitDebugMetaInfo = emitDebugMetaInfo
+      emitDebugTypeInfo = emitDebugTypeInfo
     )
 
   }
