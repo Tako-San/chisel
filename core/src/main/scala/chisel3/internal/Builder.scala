@@ -479,7 +479,8 @@ private[chisel3] class DynamicContext(
   val inlineTestIncluder: InlineTestIncluder,
   val suppressSourceInfo: Boolean,
   var elideLayerBlocks:   Boolean,
-  val elaborationTrace:   ElaborationTrace
+  val elaborationTrace:   ElaborationTrace,
+  val emitDebugTypeInfo:  Boolean = false
 ) {
   val importedDefinitionAnnos = annotationSeq.collect { case a: ImportDefinitionAnnotation[_] => a }
 
@@ -535,6 +536,20 @@ private[chisel3] class DynamicContext(
   val layers = mutable.LinkedHashSet[layer.Layer]()
   val options = mutable.LinkedHashSet[choice.Case]()
   val domains = mutable.LinkedHashSet[domain.Domain]()
+
+  val emittedDebugEnums: Option[mutable.HashSet[String]] =
+    if (emitDebugTypeInfo) Some(new mutable.HashSet[String]()) else None
+
+  // Per-elaboration map HasId._id -> DebugMeta.
+  // None when emitDebugTypeInfo == false
+  val debugMetaMap: Option[mutable.HashMap[Long, Builder.DebugMeta]] =
+    if (emitDebugTypeInfo) Some(new mutable.HashMap[Long, Builder.DebugMeta]()) else None
+
+  // Ctor args stack: pushed by DebugMeta.withCtorArgs before
+  // Module(), popped by emitModuleInfo inside generateComponent().
+  val pendingCtorArgsStack: mutable.Stack[Option[Seq[Any]]] =
+    new mutable.Stack[Option[Seq[Any]]]()
+
   var currentModule: Option[BaseModule] = None
 
   // Views that do not correspond to a single ReferenceTarget and thus require renaming
@@ -616,11 +631,46 @@ private[chisel3] object Builder extends LazyLogging {
 
   def contextCache: BuilderContextCache = dynamicContext.contextCache
 
+  def emittedDebugEnums: Option[mutable.HashSet[String]] = dynamicContext.emittedDebugEnums
+
   def annotationSeq:         AnnotationSeq = dynamicContext.annotationSeq
   def importedDefinitionMap: Map[String, String] = dynamicContext.importedDefinitionMap
 
   def unnamedViews:  ArrayBuffer[Data] = dynamicContext.unnamedViews
   def viewNamespace: Namespace = chiselContext.get.viewNamespace
+
+  case class DebugMeta(
+    className:  String,
+    params:     String,
+    sourceFile: String,
+    sourceLine: Int
+  )
+
+  private[chisel3] def debugMetaInfo: Option[mutable.HashMap[Long, DebugMeta]] =
+    dynamicContextVar.value.flatMap(_.debugMetaMap)
+
+  private[chisel3] def recordDebugMeta(
+    target:     HasId,
+    className:  String,
+    params:     String,
+    sourceFile: String,
+    sourceLine: Int
+  ): Unit =
+    debugMetaInfo.foreach { map =>
+      map(target._id) = DebugMeta(className, params, sourceFile, sourceLine)
+    }
+
+  private[chisel3] def getDebugMeta(target: HasId): Option[DebugMeta] =
+    debugMetaInfo.flatMap(_.get(target._id))
+
+  private[chisel3] def pushPendingCtorArgs(args: Option[Seq[Any]]): Unit =
+    dynamicContextVar.value.foreach(_.pendingCtorArgsStack.push(args))
+
+  private[chisel3] def popPendingCtorArgs(): Option[Seq[Any]] =
+    dynamicContextVar.value.flatMap { dc =>
+      if (dc.pendingCtorArgsStack.nonEmpty) dc.pendingCtorArgsStack.pop()
+      else None
+    }
 
   // Puts a prefix string onto the prefix stack
   def pushPrefix(d: String): Unit = {

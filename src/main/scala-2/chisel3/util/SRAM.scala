@@ -14,6 +14,7 @@ import firrtl.annotations.{IsMember, MemoryLoadFileType}
 
 import scala.annotation.nowarn
 import scala.language.reflectiveCalls
+import scala.util.Try
 import chisel3.internal.firrtl.ir
 import chisel3.properties.Class.ClassDefinitionOps
 import chisel3.properties.{Class, ClassType, Path, Property}
@@ -147,7 +148,8 @@ class SRAMInterface[T <: Data](
   val numReadwritePorts: Int,
   val masked:            Boolean = false,
   val hasDescription:    Boolean = false
-) extends Bundle {
+) extends Bundle
+    with chisel3.internal.HasDebugSramMeta {
 
   /** Public accessor for data type of this interface. */
   def dataType: T = tpe
