@@ -76,7 +76,8 @@ object v extends Module {
     } ++ scalaCrossVersions.filterNot(isScala3(_)).flatMap { ver2 =>
       Seq(
         `integration-tests`.cross(ver2).test,
-        lit.utility.cross(ver2)
+        lit.utility.cross(ver2),
+        chisel(ver2).pluginTest
       )
     }
   }
@@ -125,6 +126,8 @@ object v extends Module {
     // FirtoolResolver uses package shading which causes issues with metadata for inlining.
     // We don't want to inline from it anyway so just suppress the warning.
     "msg=reading InlineInfoAttribute from firtoolresolver:s",
+    // Class.newInstance deprecated since Java 9; suppress for Java 21 compatibility
+    "msg=method newInstance in class Class is deprecated:s",
     // Scala 2.13.17 adds warning for inferred structural types but this is not
     // a problem because in Scala 3 we use Selectable.
     "msg=will no longer have a structural type:s"
@@ -137,7 +140,7 @@ object v extends Module {
     "-unchecked",
     "-Werror",
     "-Ymacro-annotations",
-    "-release:8",
+    "-release:21",
     "-explaintypes",
     "-Xcheckinit",
     "-Xlint:infer-any",
@@ -300,6 +303,17 @@ object circt extends Module {
 // TODO: move chisel src to subfolder once we have dropped sbt flow
 object chisel extends Cross[Chisel](v.scalaCrossVersions)
 
+object testUtil extends Cross[TestUtil](v.scalaCrossVersions)
+
+trait TestUtil extends ChiselCrossModule with HasScala2MacroAnno with HasScalaPlugin {
+  override def moduleDir = super.moduleDir / os.up
+  override def sources = Task.Sources("src/test-util/scala")
+  override def moduleDeps = super.moduleDeps ++ Seq(
+    core.cross(crossScalaVersion),
+    svsim.cross(crossScalaVersion)
+  )
+}
+
 trait Chisel extends CrossSbtModule with HasScala2MacroAnno with HasScalaPlugin with ScalafmtModule {
 
   override def moduleDir = super.moduleDir / os.up
@@ -329,6 +343,9 @@ trait Chisel extends CrossSbtModule with HasScala2MacroAnno with HasScalaPlugin 
     override def scalacOptions = Task { super.scalacOptions() :+ "-Wconf:cat=other-implicit-type:s" }
 
     override def testForkGrouping = discoveredTestClasses().grouped(8).toSeq
+
+    override def moduleDeps =
+      super.moduleDeps :+ testUtil.apply(crossScalaVersion)
 
     // Compile shared libraries for the simulator link library tests.
     def sharedTestLibs: T[Seq[os.Path]] = Task(persistent = true) {
@@ -362,6 +379,32 @@ trait Chisel extends CrossSbtModule with HasScala2MacroAnno with HasScalaPlugin 
       val libs = sharedTestLibs()
       super.forkArgs() :+ s"-Dchiselsim.libraries=linkLibB=${libs(1)}"
     }
+  }
+
+  object pluginTest extends CrossSbtTests with TestModule.ScalaTest with ScalafmtModule {
+    def mvnDeps = Seq(v.scalatest)
+
+    override def testSandboxWorkingDir = false
+
+    override def moduleDeps =
+      super.moduleDeps :+ testUtil.apply(crossScalaVersion)
+
+    override def scalacOptions = Task {
+      val withPlugin = super.scalacOptions() :+ s"-Xplugin:${plugin.cross(_scalaVersion).jar().path}"
+      if (v.isScala3(crossScalaVersion))
+        withPlugin :+ "-Wconf:cat=deprecation&origin=chisel3\\.debug\\.DebugMeta\\.withCtorArgs:s"
+      else
+        withPlugin ++ Seq(
+          "-P:chiselplugin:emitDebugTypeInfo",
+          "-Wconf:cat=deprecation&origin=chisel3\\.debug\\.DebugMeta\\.withCtorArgs:s"
+        )
+    }
+
+    override def scalacPluginClasspath = Task {
+      super.scalacPluginClasspath() ++ Seq(plugin.cross(_scalaVersion).jar())
+    }
+
+    override def sources = Task.Sources("src/test-plugin/scala")
   }
 
   def unitTest(
