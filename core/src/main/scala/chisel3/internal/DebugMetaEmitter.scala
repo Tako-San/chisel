@@ -17,6 +17,7 @@ import ujson._
 private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
   private final val TypeTagIntrinsic = "circt_debug_typetag"
+  private final val TypeDefIntrinsic = "circt_debug_typedef"
   private final val ModuleInfoIntrinsic = "circt_debug_moduleinfo"
   private final val EnumDefIntrinsic = "circt_debug_enumdef"
   private final val MemInfoIntrinsic = "circt_debug_meminfo"
@@ -38,13 +39,23 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       case _: MemoryPortBinding => "memport"
       case _: SramPortBinding   => "sramport"
       case _: OpBinding         => "node"
-    }
+    }.orElse(data.binding.collect {
+      // For Vec.sample_element, derive binding from parent Vec's binding
+      case SampleElementBinding(parent) if parent.isInstanceOf[Vec[_]] =>
+        bindingStr(parent)
+    }.flatten)
 
   private def directionStr(data: Data): String = data.specifiedDirection match {
     case SpecifiedDirection.Input       => "input"
     case SpecifiedDirection.Output      => "output"
     case SpecifiedDirection.Flip        => "flip"
     case SpecifiedDirection.Unspecified => "unspecified"
+  }
+
+  private def localName(data: Data): String = {
+    val full = data.instanceName
+    val dot = full.lastIndexOf('.')
+    if (dot >= 0) full.substring(dot + 1) else full
   }
 
   private def stripCompanionSuffix(name: String): String = name.stripSuffix("$")
@@ -107,31 +118,171 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     }
   }
 
-  private def emitDataMeta(data: Data)(implicit si: SourceInfo): Unit = {
+  private def emitDataMeta(data: Data)(implicit si: SourceInfo): Unit =
+    data match {
+      case r: Record => emitRecordMeta(r, parentPath = "")
+      case v: Vec[_] => emitVecMeta(v, parentPath = "")
+      case _ => emitLeafMeta(data, parentPath = "")
+    }
+
+  private def emitRecordMeta(
+    r:          Record,
+    parentPath: String
+  )(implicit si: SourceInfo): Unit = {
+    val meta = Builder.getDebugMeta(r)
+    val className = extractClassName(r.getClass, meta)
+    val (sf, sl) = sourceLocParts(meta, Some(si))
+
+    // Emit type tag for the Record/Bundle itself (only if passive, as firtool requires passive types)
+    // For non-passive bundles, skip emitting TypeTagIntrinsic and rely on TypeDefIntrinsic + field tags
+    if (chisel3.reflect.DataMirror.isFullyAligned(r)) {
+      val typetagParams: Seq[(String, Param)] = Seq(
+        "name" -> StringParam(r.instanceName),
+        "className" -> StringParam(className),
+        "width" -> IntParam(resolvedWidth(r).map(BigInt(_)).getOrElse(BigInt(-1))),
+        "binding" -> StringParam(bindingStr(r).getOrElse("unknown")),
+        "direction" -> StringParam(directionStr(r)),
+        "sourceFile" -> StringParam(sf),
+        "sourceLine" -> IntParam(sl),
+        "parent" -> StringParam(parentPath)
+      )
+      pushCommand(DefIntrinsic(si, TypeTagIntrinsic, Seq(Node(r)), typetagParams))
+    }
+
+    // Emit typedef for the Record/Bundle structure
+    val fieldsJson = ujson.Arr.from(r.elements.map { case (fname, fdata) =>
+      ujson.Obj("name" -> fname, "direction" -> directionStr(fdata))
+    })
+    pushCommand(
+      DefIntrinsic(
+        si,
+        TypeDefIntrinsic,
+        Seq.empty,
+        Seq(
+          "name" -> StringParam(r.instanceName),
+          "className" -> StringParam(className),
+          "binding" -> StringParam(bindingStr(r).getOrElse("unknown")),
+          "direction" -> StringParam(directionStr(r)),
+          "parent" -> StringParam(parentPath),
+          "sourceFile" -> StringParam(sf),
+          "sourceLine" -> IntParam(sl),
+          "fields" -> StringParam(ujson.write(fieldsJson))
+        )
+      )
+    )
+
+    val myPath =
+      if (parentPath.isEmpty) r.instanceName
+      else s"$parentPath.${localName(r)}"
+    r.elements.foreach { case (_, fdata) =>
+      fdata match {
+        case nested: Record => emitRecordMeta(nested, myPath)
+        case nested: Vec[_] => emitVecMeta(nested, myPath)
+        case leaf => emitLeafMeta(leaf, myPath)
+      }
+    }
+  }
+
+  private def emitVecMeta(
+    v:          Vec[_],
+    parentPath: String
+  )(implicit si: SourceInfo): Unit = {
+    val meta = Builder.getDebugMeta(v)
+    val (sf, sl) = sourceLocParts(meta, Some(si))
+
+    // Emit type tag for the Vec itself (only if passive, as firtool requires passive types)
+    // For non-passive Vecs, skip emitting TypeTagIntrinsic and rely on TypeDefIntrinsic + element tags
+    if (chisel3.reflect.DataMirror.isFullyAligned(v)) {
+      val typetagParams: Seq[(String, Param)] = Seq(
+        "name" -> StringParam(v.instanceName),
+        "className" -> StringParam("Vec"),
+        "width" -> IntParam(resolvedWidth(v).map(BigInt(_)).getOrElse(BigInt(-1))),
+        "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
+        "direction" -> StringParam(directionStr(v)),
+        "sourceFile" -> StringParam(sf),
+        "sourceLine" -> IntParam(sl),
+        "parent" -> StringParam(parentPath)
+      )
+      pushCommand(DefIntrinsic(si, TypeTagIntrinsic, Seq(Node(v)), typetagParams))
+    }
+
+    // Emit typedef for the Vec structure
+    pushCommand(
+      DefIntrinsic(
+        si,
+        TypeDefIntrinsic,
+        Seq.empty,
+        Seq(
+          "name" -> StringParam(v.instanceName),
+          "className" -> StringParam("Vec"),
+          "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
+          "direction" -> StringParam(directionStr(v)),
+          "parent" -> StringParam(parentPath),
+          "sourceFile" -> StringParam(sf),
+          "sourceLine" -> IntParam(sl),
+          "vecLength" -> IntParam(BigInt(v.length))
+        )
+      )
+    )
+
+    val myPath =
+      if (parentPath.isEmpty) v.instanceName
+      else s"$parentPath.${localName(v)}"
+    Option(v.sample_element).asInstanceOf[Option[Data]].foreach {
+      case nested: Record => emitRecordMeta(nested, myPath)
+      case nested: Vec[_] => emitVecMeta(nested, myPath)
+      case elem =>
+        // Ground-type Vec element: no SSA → typedef with "_elem_" marker
+        val neededEnums = collectRequiredEnums(elem)
+        val enumNames = emitPendingEnumDefs(neededEnums)
+        val elemMeta = Builder.getDebugMeta(elem)
+        val (elemSf, elemSl) = sourceLocParts(elemMeta, Some(si))
+        val extraParams = getEnumPairOpt(elem, enumNames)
+          .fold(Seq.empty[(String, Param)]) { case (s, fqn) =>
+            Seq("enumType" -> StringParam(s), "enumTypeFqn" -> StringParam(fqn))
+          }
+        pushCommand(
+          DefIntrinsic(
+            si,
+            TypeDefIntrinsic,
+            Seq.empty,
+            Seq(
+              "name" -> StringParam("_elem_"),
+              "className" -> StringParam(extractClassName(elem.getClass, elemMeta)),
+              "width" -> IntParam(resolvedWidth(elem).map(BigInt(_)).getOrElse(BigInt(-1))),
+              "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
+              "direction" -> StringParam("unspecified"),
+              "parent" -> StringParam(myPath),
+              "sourceFile" -> StringParam(elemSf),
+              "sourceLine" -> IntParam(elemSl)
+            ) ++ extraParams
+          )
+        )
+    }
+  }
+
+  private def emitLeafMeta(
+    data:       Data,
+    parentPath: String
+  )(implicit si: SourceInfo): Unit = {
     val neededEnums = collectRequiredEnums(data)
     val enumNames = emitPendingEnumDefs(neededEnums)
-
     val meta = Builder.getDebugMeta(data)
-    val (sourceFile, sourceLine) = sourceLocParts(meta, Some(si))
+    val (sf, sl) = sourceLocParts(meta, Some(si))
 
-    // Single circt_debug_typetag with the SSA value as operand for all types.
-    // For Bundle/Vec, the CIRCT lowering pass builds dbg.struct / dbg.array
-    // by recursively applying firrtl.subfield / firrtl.subindex — mirroring
-    // MaterializeDebugInfo.  firrtl.subfield always returns a passive type
-    // (flip is stored in BundleElement.isFlip, not in the result type), so
-    // no PassiveType constraint violation occurs even for non-passive bundles.
     val baseParams: Seq[(String, Param)] = Seq(
       "name" -> StringParam(data.instanceName),
       "className" -> StringParam(extractClassName(data.getClass, meta)),
       "width" -> IntParam(resolvedWidth(data).map(BigInt(_)).getOrElse(BigInt(-1))),
       "binding" -> StringParam(bindingStr(data).getOrElse("unknown")),
       "direction" -> StringParam(directionStr(data)),
-      "sourceFile" -> StringParam(sourceFile),
-      "sourceLine" -> IntParam(sourceLine)
+      "sourceFile" -> StringParam(sf),
+      "sourceLine" -> IntParam(sl),
+      "parent" -> StringParam(parentPath)
     ) ++
       meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
-      getEnumPairOpt(data, enumNames).fold(Seq.empty[(String, Param)]) { case (simpleName, fqn) =>
-        Seq("enumType" -> StringParam(simpleName), "enumTypeFqn" -> StringParam(fqn))
+      getEnumPairOpt(data, enumNames).fold(Seq.empty[(String, Param)]) { case (s, fqn) =>
+        Seq("enumType" -> StringParam(s), "enumTypeFqn" -> StringParam(fqn))
       }
 
     pushCommand(DefIntrinsic(si, TypeTagIntrinsic, Seq(Node(data)), baseParams))

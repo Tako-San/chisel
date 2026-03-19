@@ -183,17 +183,21 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
 
   it should "emit Bundle field structure in JSON" in {
     val chirrtl = emitWithDebug(new BundleModule)
-    // Structural info (fields/vecLength/element) is no longer emitted as JSON
-    // parameters in circt_debug_typetag — CIRCT builds dbg.struct from the IR.
-    // We verify the aggregate typetag is emitted with correct className.
+    // Structural info (fields/vecLength/element) is emitted as circt_debug_typedef
+    // (zero-operand intrinsic) for aggregates — CIRCT builds dbg.struct from the IR.
+    // We verify both the IO port typetag (leaf type) and Bundle typedef (aggregate) are emitted.
     chirrtl should include("circt_debug_typetag")
+    chirrtl should include("circt_debug_typedef")
     chirrtl should include("className = \"MyBundle\"")
   }
 
   it should "emit Vec structure in JSON" in {
     val chirrtl = emitWithDebug(new VecModule)
-    // vecLength is no longer a parameter — structure is built by CIRCT from IR.
+    // Structural info is emitted as circt_debug_typedef for Vec aggregates —
+    // CIRCT builds dbg.struct from the IR.
+    // We verify both the IO port typetag (leaf type) and Vec typedef (aggregate) are emitted.
     chirrtl should include("circt_debug_typetag")
+    chirrtl should include("circt_debug_typedef")
     chirrtl should include("className = \"Vec\"")
   }
 
@@ -246,18 +250,22 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
 
   it should "handle nested Vec(n, Bundle)" in {
     val chirrtl = emitWithDebug(new NestedModule)
-    // vecLength/element are no longer emitted as parameters — structure is built by CIRCT.
+    // vecLength/element are emitted as circt_debug_typedef for Vec aggregates —
+    // structure is built by CIRCT from the IR.
+    // We verify both the IO port typetag (leaf type) and Vec typedef (aggregate) are emitted.
     chirrtl should include("circt_debug_typetag")
+    chirrtl should include("circt_debug_typedef")
     chirrtl should include("className = \"Vec\"")
   }
 
   it should "truncate structure at max depth and emit sentinel" in {
-    // Structural params (fields/vecLength/element) are no longer emitted by Chisel;
-    // structure is built by CIRCT from the IR directly.  MaxStructureDepth / truncation
-    // sentinel no longer apply at the Chisel level.  We only verify that deeply-nested
-    // types still emit a circt_debug_typetag without crashing.
+    // Structural params (fields/vecLength/element) are emitted as circt_debug_typedef
+    // for aggregates; structure is built by CIRCT from the IR directly.
+    // MaxStructureDepth / truncation sentinel no longer apply at the Chisel level.
+    // We only verify that deeply-nested types still emit typetag and typedef without crashing.
     val chirrtl = emitWithDebug(new DeepBundleModule)
     chirrtl should include("circt_debug_typetag")
+    chirrtl should include("circt_debug_typedef")
   }
 
   it should "emit circt_debug_moduleinfo" in {
@@ -684,9 +692,9 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     }
     val chirrtl = emitWithDebug(new VecModuleWithPort)
 
-    // vecLength/element are no longer emitted as parameters in circt_debug_typetag
-    // (structure is built by CIRCT from the IR).  We verify the typetag is emitted
-    // with the correct className and no spurious direction parameter.
+    // Vec aggregate emits circt_debug_typedef (structure built by CIRCT from the IR).
+    // We verify that the IO port typetag (leaf type) is emitted with correct className
+    // and no spurious direction parameter in typetag lines.
     chirrtl should include("className = \"Vec\"")
     val typetagLines = chirrtl.split("\n").filter(_.contains("circt_debug_typetag"))
     typetagLines.foreach { line =>
@@ -758,12 +766,13 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
   }
 
   it should "emit __truncated as top-level key, not inside fields object" in {
-    // Structural JSON (fields/element/vecLength) is no longer emitted as parameters
-    // in circt_debug_typetag; truncation at max depth is therefore no longer a
-    // Chisel-level concern.  MaxStructureDepth / setMaxStructureDepth remain available
-    // for meminfo dataType JSON, but not for typetag.  We simply verify no crash.
+    // Structural info is emitted as circt_debug_typedef for aggregates;
+    // truncation at max depth is no longer a Chisel-level concern for typetag/typedef.
+    // MaxStructureDepth / setMaxStructureDepth remain available for meminfo dataType JSON.
+    // We simply verify no crash and that both typetag and typedef are emitted.
     val chirrtl = emitWithDebug(new DeepBundleModule)
     chirrtl should include("circt_debug_typetag")
+    chirrtl should include("circt_debug_typedef")
   }
 
   /** Recursively checks if __truncated key exists in any nested JSON object */
