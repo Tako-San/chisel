@@ -123,7 +123,8 @@ object Definition extends SourceInfoDoc {
         context.inlineTestIncluder,
         context.suppressSourceInfo,
         context.elideLayerBlocks,
-        context.elaborationTrace
+        context.elaborationTrace,
+        context.emitDebugTypeInfo
       )
     }
     dynamicContext.inDefinition = true

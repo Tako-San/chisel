@@ -4,6 +4,7 @@ package chisel3.util
 
 import chisel3._
 import chisel3.experimental.requireIsChiselType
+import chisel3.internal.{DebugMetaPolicy, HasDebugMetaPolicy}
 
 import scala.collection.immutable.ListMap
 
@@ -87,9 +88,15 @@ object MixedVec {
   * v(2) := 101.U(32.W)
   * }}}
   */
-final class MixedVec[T <: Data](private val eltsIn: Seq[T]) extends Record with collection.immutable.IndexedSeq[T] {
+final class MixedVec[T <: Data](private val eltsIn: Seq[T])
+    extends Record
+    with collection.immutable.IndexedSeq[T]
+    with HasDebugMetaPolicy {
   // We want to create MixedVec only with Chisel types.
   eltsIn.foreach(e => requireIsChiselType(e))
+
+  override val debugMetaPolicy =
+    DebugMetaPolicy(extraKind = Some("MixedVec"))
 
   // In Scala 2.13, this is protected in IndexedSeq, must override as public because it's public in
   // Record
