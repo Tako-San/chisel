@@ -140,7 +140,7 @@ object v extends Module {
     "-unchecked",
     "-Werror",
     "-Ymacro-annotations",
-    "-release:21",
+    "-release:8",
     "-explaintypes",
     "-Xcheckinit",
     "-Xlint:infer-any",
