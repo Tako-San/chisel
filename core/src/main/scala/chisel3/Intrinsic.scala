@@ -4,8 +4,8 @@ package chisel3
 
 import chisel3._
 import chisel3.experimental.{requireIsChiselType, SourceInfo}
-import chisel3.internal.firrtl.ir._
-import chisel3.internal.Builder
+import chisel3.internal.firrtl.ir.{DefIntrinsic, DefIntrinsicExpr, Node, Ref, _}
+import chisel3.internal.{Builder, HasId}
 import chisel3.internal.binding.OpBinding
 import chisel3.internal.Builder.pushCommand
 
@@ -55,6 +55,10 @@ object IntrinsicExpr {
 
     int.bind(OpBinding(Builder.forcedUserModule, Builder.currentBlock))
     require(params.map(_._1).distinct.size == params.size, "parameter names must be unique")
+    // Set a temporary _ref so that when used as an operand in subsequent Intrinsic calls,
+    // Data.ref can return a reference without None.get error.
+    // This uses a unique name based on _id to avoid conflicts.
+    int.setRef(Ref(s"_T${int._id}"), force = true)
     pushCommand(DefIntrinsicExpr(sourceInfo, intrinsic, int, data.map(_.ref), params))
     int
   }

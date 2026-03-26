@@ -162,25 +162,53 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   )(implicit si: SourceInfo): Unit = {
     val meta = Builder.getDebugMeta(v)
     val (sf, sl) = sourceLocParts(meta, Some(si))
+    val binding = bindingStr(v)
 
-    // Vec is always passive — safe to pass as signal operand regardless of nesting depth.
-    // IntrinsicExpr gives CIRCT both the signal reference and the SSA parent-scope edge.
-    val myHandle = IntrinsicExpr(
-      TypeTagIntrinsic,
-      UInt(0.W),
-      "name" -> StringParam(v.instanceName),
-      "className" -> StringParam("Vec"),
-      "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
-      "direction" -> StringParam(directionStr(v)),
-      "vecLength" -> IntParam(BigInt(v.length)),
-      "sourceFile" -> StringParam(sf),
-      "sourceLine" -> IntParam(sl)
-    )(
-      Seq[Data](v) ++ parentHandle.toSeq: _*
-      // op[0] = Vec signal (always — Vec is always passive)
-      // op[1] = parent token from enclosing Bundle typenode or Vec typetag (if nested)
-    )
+    // Vec handling based on parentHandle:
+    // - No parentHandle (top-level Vec port): emit TWO forms:
+    //   1. TypeTag (void form, with signal operand) - firtool requires void form for TypeTag
+    //   2. TypeNode (returns token) for structural hierarchy
+    // - Has parentHandle (Vec nested in Bundle): emit only TypeTag void form
+    //   Use parent's TypeNode for children
+    val myHandle: Data = if (parentHandle.isEmpty) {
+      // Top-level Vec port: emit TypeNode for structure (returns a token)
+      val typeNodeToken = IntrinsicExpr(
+        TypeNodeIntrinsic,
+        UInt(0.W),
+        "name" -> StringParam(v.instanceName),
+        "className" -> StringParam("Vec"),
+        "binding" -> StringParam(binding.getOrElse("unknown")),
+        "direction" -> StringParam(directionStr(v)),
+        "vecLength" -> IntParam(BigInt(v.length)),
+        "sourceFile" -> StringParam(sf),
+        "sourceLine" -> IntParam(sl)
+      )()
+      // Emit TypeTag void form (firtool requires this for circt_debug_typetag)
+      Intrinsic(
+        TypeTagIntrinsic,
+        "name" -> StringParam(v.instanceName),
+        "className" -> StringParam("Vec"),
+        "binding" -> StringParam(binding.getOrElse("unknown")),
+        "direction" -> StringParam(directionStr(v)),
+        "vecLength" -> IntParam(BigInt(v.length)),
+        "sourceFile" -> StringParam(sf),
+        "sourceLine" -> IntParam(sl)
+      )(v, typeNodeToken)
+      typeNodeToken
+    } else {
+      // Vec nested in Bundle: emit TypeTag void form, use parent handle for children
+      Intrinsic(
+        TypeTagIntrinsic,
+        "name" -> StringParam(v.instanceName),
+        "className" -> StringParam("Vec"),
+        "vecLength" -> IntParam(BigInt(v.length)),
+        "sourceFile" -> StringParam(sf),
+        "sourceLine" -> IntParam(sl)
+      )(v, parentHandle.get)
+      parentHandle.get
+    }
 
+    // Emit element TypeTags with parent handle
     v.getElements.foreach {
       case nested: Record => emitRecordMeta(nested, Some(myHandle))
       case nested: Vec[_] => emitVecMeta(nested, Some(myHandle))
