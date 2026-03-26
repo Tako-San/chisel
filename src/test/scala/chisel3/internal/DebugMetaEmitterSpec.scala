@@ -192,7 +192,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
   it should "emit Vec structure in JSON" in {
     val chirrtl = emitWithDebug(new VecModule)
 
-    // Top-level Vec → typetag void form (firtool requirement) + typenode (structural hierarchy)
+    // Top-level Vec → typetag void form (firtool requirement)
     chirrtl should include("circt_debug_typetag")
     chirrtl should include("className = \"Vec\"")
 
@@ -203,17 +203,16 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     vecTagLines should not be empty
     all(vecTagLines) should not.include("= intrinsic(circt_debug_typetag")
 
-    // Vec also emits typenode for structural hierarchy
-    chirrtl should include("circt_debug_typenode")
+    // Vec does NOT emit typenode - CIRCT handles decomposition
+    (chirrtl should not).include("circt_debug_typenode")
     val typenodeLines = chirrtl.split("\n").filter(_.contains("circt_debug_typenode"))
-    typenodeLines.exists(_.contains("className = \"Vec\"")) shouldBe true
+    typenodeLines.exists(_.contains("className = \"Vec\"")) shouldBe false
 
-    // Element typetags via getElements — void form
+    // Vec elements are not emitted separately by Chisel
     val elemTagLines = chirrtl
       .split("\n")
       .filter(l => l.contains("circt_debug_typetag") && !l.contains("className = \"Vec\""))
-    elemTagLines.length >= 4
-    (all(elemTagLines) should not).include("= intrinsic(circt_debug_typetag")
+    elemTagLines shouldBe empty // Vec elements are not emitted separately by Chisel
   }
 
   it should "handle InferredWidth without exception" in {
@@ -265,11 +264,19 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
 
   it should "handle nested Vec(n, Bundle)" in {
     val chirrtl = emitWithDebug(new NestedModule)
-    // Both Vec and Bundle use circt_debug_typetag (IntrinsicExpr form).
+    // Vec uses circt_debug_typetag void form only
+    // CIRCT handles decomposing the Vec and Bundles via buildDebugAggregateWithMeta
     chirrtl should include("circt_debug_typetag")
     chirrtl should include("className = \"Vec\"")
-    // typetag is still emitted for leaf fields
-    chirrtl should include("circt_debug_typenode") // Bundle structure
+    // Vec does NOT emit typenode - CIRCT handles decomposition
+    (chirrtl should not).include("circt_debug_typenode")
+    // Vec elements are not emitted separately by Chisel
+    val vecTypetags = chirrtl
+      .split("\n")
+      .filter(l => l.contains("circt_debug_typetag") && l.contains("className = \"Vec\""))
+    vecTypetags should not be empty
+    // Verify only one Vec typetag is emitted (not one per element)
+    vecTypetags.size shouldBe 1
   }
 
   it should "truncate structure at max depth and emit sentinel" in {
@@ -815,7 +822,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     all(vecTagLines) should not.include("= intrinsic(circt_debug_typetag")
 
     // Leaf ground types → typetag void form (no "= intrinsic" prefix)
-    // Filter out Vec and Bundle to get only leaf ground types
+    // Filter out Vec and Bundle to get only leaf ground types (e.g., io.flag)
     val leafTagLines = chirrtl
       .split("\n")
       .filter(l =>

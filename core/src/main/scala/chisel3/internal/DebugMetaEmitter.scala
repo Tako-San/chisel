@@ -164,56 +164,21 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     val (sf, sl) = sourceLocParts(meta, Some(si))
     val binding = bindingStr(v)
 
-    // Vec handling based on parentHandle:
-    // - No parentHandle (top-level Vec port): emit TWO forms:
-    //   1. TypeTag (void form, with signal operand) - firtool requires void form for TypeTag
-    //   2. TypeNode (returns token) for structural hierarchy
-    // - Has parentHandle (Vec nested in Bundle): emit only TypeTag void form
-    //   Use parent's TypeNode for children
-    val myHandle: Data = if (parentHandle.isEmpty) {
-      // Top-level Vec port: emit TypeNode for structure (returns a token)
-      val typeNodeToken = IntrinsicExpr(
-        TypeNodeIntrinsic,
-        UInt(0.W),
-        "name" -> StringParam(v.instanceName),
-        "className" -> StringParam("Vec"),
-        "binding" -> StringParam(binding.getOrElse("unknown")),
-        "direction" -> StringParam(directionStr(v)),
-        "vecLength" -> IntParam(BigInt(v.length)),
-        "sourceFile" -> StringParam(sf),
-        "sourceLine" -> IntParam(sl)
-      )()
-      // Emit TypeTag void form (firtool requires this for circt_debug_typetag)
+    // Emit exactly ONE void circt_debug_typetag for the Vec signal
+    // CIRCT will decompose the vector type via buildDebugAggregateWithMeta
+    if (binding.isDefined) {
       Intrinsic(
         TypeTagIntrinsic,
         "name" -> StringParam(v.instanceName),
         "className" -> StringParam("Vec"),
-        "binding" -> StringParam(binding.getOrElse("unknown")),
+        "binding" -> StringParam(binding.get),
         "direction" -> StringParam(directionStr(v)),
         "vecLength" -> IntParam(BigInt(v.length)),
         "sourceFile" -> StringParam(sf),
         "sourceLine" -> IntParam(sl)
-      )(v, typeNodeToken)
-      typeNodeToken
-    } else {
-      // Vec nested in Bundle: emit TypeTag void form, use parent handle for children
-      Intrinsic(
-        TypeTagIntrinsic,
-        "name" -> StringParam(v.instanceName),
-        "className" -> StringParam("Vec"),
-        "vecLength" -> IntParam(BigInt(v.length)),
-        "sourceFile" -> StringParam(sf),
-        "sourceLine" -> IntParam(sl)
-      )(v, parentHandle.get)
-      parentHandle.get
+      )(v +: parentHandle.toSeq: _*) // Only signal operand, no myHandle returned
     }
-
-    // Emit element TypeTags with parent handle
-    v.getElements.foreach {
-      case nested: Record => emitRecordMeta(nested, Some(myHandle))
-      case nested: Vec[_] => emitVecMeta(nested, Some(myHandle))
-      case leaf => emitLeafMeta(leaf, Some(myHandle))
-    }
+    // No myHandle, no recursion into elements - handled by CIRCT
   }
 
   private def emitLeafMeta(
