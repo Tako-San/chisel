@@ -5,6 +5,7 @@ package chisel3.internal
 import scala.collection.mutable
 
 import chisel3._
+import chisel3.{Intrinsic, IntrinsicExpr}
 import chisel3.experimental.{BaseModule, SourceInfo, SourceLine}
 import chisel3.internal.Builder.pushCommand
 import chisel3.internal.binding._
@@ -16,8 +17,8 @@ import ujson._
 
 private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
-  private final val TypeTagIntrinsic = "circt_debug_typetag"
-  private final val TypeDefIntrinsic = "circt_debug_typedef"
+  private final val TypeTagIntrinsic = "circt_debug_typetag" // leaf + Vec (passive, carries signal)
+  private final val TypeNodeIntrinsic = "circt_debug_typenode" // Bundle structural token (no signal)
   private final val ModuleInfoIntrinsic = "circt_debug_moduleinfo"
   private final val EnumDefIntrinsic = "circt_debug_enumdef"
   private final val MemInfoIntrinsic = "circt_debug_meminfo"
@@ -120,172 +121,103 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
   private def emitDataMeta(data: Data)(implicit si: SourceInfo): Unit =
     data match {
-      case r: Record => emitRecordMeta(r, parentPath = "")
-      case v: Vec[_] => emitVecMeta(v, parentPath = "")
-      case _ => emitLeafMeta(data, parentPath = "")
+      case r: Record => emitRecordMeta(r, parentHandle = None)
+      case v: Vec[_] => emitVecMeta(v, parentHandle = None)
+      case _ => emitLeafMeta(data, parentHandle = None)
     }
 
   private def emitRecordMeta(
-    r:          Record,
-    parentPath: String
+    r:            Record,
+    parentHandle: Option[Data]
   )(implicit si: SourceInfo): Unit = {
     val meta = Builder.getDebugMeta(r)
     val className = extractClassName(r.getClass, meta)
     val (sf, sl) = sourceLocParts(meta, Some(si))
 
-    // Emit type tag for the Record/Bundle itself (only if passive, as firtool requires passive types)
-    // For non-passive bundles, skip emitting TypeTagIntrinsic and rely on TypeDefIntrinsic + field tags
-    if (chisel3.reflect.DataMirror.isFullyAligned(r)) {
-      val typetagParams: Seq[(String, Param)] = Seq(
-        "name" -> StringParam(r.instanceName),
-        "className" -> StringParam(className),
-        "width" -> IntParam(resolvedWidth(r).map(BigInt(_)).getOrElse(BigInt(-1))),
-        "binding" -> StringParam(bindingStr(r).getOrElse("unknown")),
-        "direction" -> StringParam(directionStr(r)),
-        "sourceFile" -> StringParam(sf),
-        "sourceLine" -> IntParam(sl),
-        "parent" -> StringParam(parentPath)
-      )
-      pushCommand(DefIntrinsic(si, TypeTagIntrinsic, Seq(Node(r)), typetagParams))
-    }
+    // Bundle may contain flipped fields → cannot pass as signal operand.
+    // circt_debug_typenode is the dedicated op for non-passive aggregate structural tokens.
+    val myHandle = IntrinsicExpr(
+      TypeNodeIntrinsic,
+      UInt(0.W),
+      "name" -> StringParam(r.instanceName),
+      "className" -> StringParam(className),
+      "binding" -> StringParam(bindingStr(r).getOrElse("unknown")),
+      "direction" -> StringParam(directionStr(r)),
+      "sourceFile" -> StringParam(sf),
+      "sourceLine" -> IntParam(sl)
+    )(parentHandle.toSeq: _*)
 
-    // Emit typedef for the Record/Bundle structure
-    val fieldsJson = ujson.Arr.from(r.elements.map { case (fname, fdata) =>
-      ujson.Obj("name" -> fname, "direction" -> directionStr(fdata))
-    })
-    pushCommand(
-      DefIntrinsic(
-        si,
-        TypeDefIntrinsic,
-        Seq.empty,
-        Seq(
-          "name" -> StringParam(r.instanceName),
-          "className" -> StringParam(className),
-          "binding" -> StringParam(bindingStr(r).getOrElse("unknown")),
-          "direction" -> StringParam(directionStr(r)),
-          "parent" -> StringParam(parentPath),
-          "sourceFile" -> StringParam(sf),
-          "sourceLine" -> IntParam(sl),
-          "fields" -> StringParam(ujson.write(fieldsJson))
-        )
-      )
-    )
-
-    val myPath =
-      if (parentPath.isEmpty) r.instanceName
-      else s"$parentPath.${localName(r)}"
-    r.elements.foreach { case (_, fdata) =>
+    r.elements.toSeq.foreach { case (_, fdata) =>
       fdata match {
-        case nested: Record => emitRecordMeta(nested, myPath)
-        case nested: Vec[_] => emitVecMeta(nested, myPath)
-        case leaf => emitLeafMeta(leaf, myPath)
+        case nested: Record => emitRecordMeta(nested, Some(myHandle))
+        case nested: Vec[_] => emitVecMeta(nested, Some(myHandle))
+        case leaf => emitLeafMeta(leaf, Some(myHandle))
       }
     }
   }
 
   private def emitVecMeta(
-    v:          Vec[_],
-    parentPath: String
+    v:            Vec[_],
+    parentHandle: Option[Data]
   )(implicit si: SourceInfo): Unit = {
     val meta = Builder.getDebugMeta(v)
     val (sf, sl) = sourceLocParts(meta, Some(si))
 
-    // Emit type tag for the Vec itself (only if passive, as firtool requires passive types)
-    // For non-passive Vecs, skip emitting TypeTagIntrinsic and rely on TypeDefIntrinsic + element tags
-    if (chisel3.reflect.DataMirror.isFullyAligned(v)) {
-      val typetagParams: Seq[(String, Param)] = Seq(
-        "name" -> StringParam(v.instanceName),
-        "className" -> StringParam("Vec"),
-        "width" -> IntParam(resolvedWidth(v).map(BigInt(_)).getOrElse(BigInt(-1))),
-        "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
-        "direction" -> StringParam(directionStr(v)),
-        "sourceFile" -> StringParam(sf),
-        "sourceLine" -> IntParam(sl),
-        "parent" -> StringParam(parentPath)
-      )
-      pushCommand(DefIntrinsic(si, TypeTagIntrinsic, Seq(Node(v)), typetagParams))
-    }
-
-    // Emit typedef for the Vec structure
-    pushCommand(
-      DefIntrinsic(
-        si,
-        TypeDefIntrinsic,
-        Seq.empty,
-        Seq(
-          "name" -> StringParam(v.instanceName),
-          "className" -> StringParam("Vec"),
-          "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
-          "direction" -> StringParam(directionStr(v)),
-          "parent" -> StringParam(parentPath),
-          "sourceFile" -> StringParam(sf),
-          "sourceLine" -> IntParam(sl),
-          "vecLength" -> IntParam(BigInt(v.length))
-        )
-      )
+    // Vec is always passive — safe to pass as signal operand regardless of nesting depth.
+    // IntrinsicExpr gives CIRCT both the signal reference and the SSA parent-scope edge.
+    val myHandle = IntrinsicExpr(
+      TypeTagIntrinsic,
+      UInt(0.W),
+      "name" -> StringParam(v.instanceName),
+      "className" -> StringParam("Vec"),
+      "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
+      "direction" -> StringParam(directionStr(v)),
+      "vecLength" -> IntParam(BigInt(v.length)),
+      "sourceFile" -> StringParam(sf),
+      "sourceLine" -> IntParam(sl)
+    )(
+      Seq[Data](v) ++ parentHandle.toSeq: _*
+      // op[0] = Vec signal (always — Vec is always passive)
+      // op[1] = parent token from enclosing Bundle typenode or Vec typetag (if nested)
     )
 
-    val myPath =
-      if (parentPath.isEmpty) v.instanceName
-      else s"$parentPath.${localName(v)}"
-    Option(v.sample_element).asInstanceOf[Option[Data]].foreach {
-      case nested: Record => emitRecordMeta(nested, myPath)
-      case nested: Vec[_] => emitVecMeta(nested, myPath)
-      case elem =>
-        // Ground-type Vec element: no SSA → typedef with "_elem_" marker
-        val neededEnums = collectRequiredEnums(elem)
-        val enumNames = emitPendingEnumDefs(neededEnums)
-        val elemMeta = Builder.getDebugMeta(elem)
-        val (elemSf, elemSl) = sourceLocParts(elemMeta, Some(si))
-        val extraParams = getEnumPairOpt(elem, enumNames)
-          .fold(Seq.empty[(String, Param)]) { case (s, fqn) =>
-            Seq("enumType" -> StringParam(s), "enumTypeFqn" -> StringParam(fqn))
-          }
-        pushCommand(
-          DefIntrinsic(
-            si,
-            TypeDefIntrinsic,
-            Seq.empty,
-            Seq(
-              "name" -> StringParam("_elem_"),
-              "className" -> StringParam(extractClassName(elem.getClass, elemMeta)),
-              "width" -> IntParam(resolvedWidth(elem).map(BigInt(_)).getOrElse(BigInt(-1))),
-              "binding" -> StringParam(bindingStr(v).getOrElse("unknown")),
-              "direction" -> StringParam("unspecified"),
-              "parent" -> StringParam(myPath),
-              "sourceFile" -> StringParam(elemSf),
-              "sourceLine" -> IntParam(elemSl)
-            ) ++ extraParams
-          )
-        )
+    v.getElements.foreach {
+      case nested: Record => emitRecordMeta(nested, Some(myHandle))
+      case nested: Vec[_] => emitVecMeta(nested, Some(myHandle))
+      case leaf => emitLeafMeta(leaf, Some(myHandle))
     }
   }
 
   private def emitLeafMeta(
-    data:       Data,
-    parentPath: String
+    data:         Data,
+    parentHandle: Option[Data]
   )(implicit si: SourceInfo): Unit = {
+    // Guard for sample_element or other unbound Data
+    if (data.topBindingOpt.isEmpty) return
+
     val neededEnums = collectRequiredEnums(data)
     val enumNames = emitPendingEnumDefs(neededEnums)
     val meta = Builder.getDebugMeta(data)
     val (sf, sl) = sourceLocParts(meta, Some(si))
 
-    val baseParams: Seq[(String, Param)] = Seq(
+    val enumParams = getEnumPairOpt(data, enumNames)
+      .fold(Seq.empty[(String, Param)]) { case (s, fqn) =>
+        Seq("enumType" -> StringParam(s), "enumTypeFqn" -> StringParam(fqn))
+      }
+
+    val params: Seq[(String, Param)] = Seq(
       "name" -> StringParam(data.instanceName),
       "className" -> StringParam(extractClassName(data.getClass, meta)),
       "width" -> IntParam(resolvedWidth(data).map(BigInt(_)).getOrElse(BigInt(-1))),
       "binding" -> StringParam(bindingStr(data).getOrElse("unknown")),
       "direction" -> StringParam(directionStr(data)),
       "sourceFile" -> StringParam(sf),
-      "sourceLine" -> IntParam(sl),
-      "parent" -> StringParam(parentPath)
-    ) ++
-      meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
-      getEnumPairOpt(data, enumNames).fold(Seq.empty[(String, Param)]) { case (s, fqn) =>
-        Seq("enumType" -> StringParam(s), "enumTypeFqn" -> StringParam(fqn))
-      }
+      "sourceLine" -> IntParam(sl)
+    ) ++ meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
+      enumParams
 
-    pushCommand(DefIntrinsic(si, TypeTagIntrinsic, Seq(Node(data)), baseParams))
+    val operands: Seq[Data] = Seq(data) ++ parentHandle.toSeq
+    Intrinsic(TypeTagIntrinsic, params: _*)(operands: _*)
   }
 
   private def emitMemMetaTyped[T <: Data](mem: MemBase[T])(implicit si: SourceInfo): Unit = {
@@ -364,7 +296,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     case e: EnumType =>
       Option(e.factory).collect { case ce: ChiselEnum => ce }.toSet
     case r: Record =>
-      r.elements.values.flatMap(collectRequiredEnums).toSet
+      r.elements.values.toVector.flatMap(collectRequiredEnums).toSet
     case v: Vec[_] if v.length > 0 =>
       Option(v.sample_element)
         .map(collectRequiredEnums)
@@ -377,42 +309,49 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     enums: Set[ChiselEnum]
   )(implicit si: SourceInfo): Map[ChiselEnum, (String, String)] = {
     val seen = Builder.emittedDebugEnums
-    enums.toSeq
-      .sortBy(_.getClass.getName)
-      .map { ce =>
-        val enumFqn = ce.getClass.getName
-        val fqnNorm = stripCompanionSuffix(enumFqn)
-        val simpleName = cleanSimpleName(ce.getClass) match {
-          case "" => fqnNorm
-          case s  => s
-        }
+    val sortedEnums = enums.toSeq.sortBy(_.getClass.getName)
 
-        if (!seen.contains(enumFqn)) {
-          val variants = ujson.Arr.from(ce.all.collect { case e: EnumType =>
-            ujson.Obj(
-              "name" -> ujson.Str(ce.nameOfValue(e.litValue).getOrElse("unknown")),
-              "value" -> ujson.Num(e.litValue.toDouble),
-              "valueStr" -> ujson.Str(e.litValue.toString)
-            )
-          })
-          pushCommand(
-            DefIntrinsic(
-              si,
-              EnumDefIntrinsic,
-              Seq.empty,
-              Seq(
-                "name" -> StringParam(simpleName),
-                "fqn" -> StringParam(fqnNorm),
-                "variants" -> StringParam(ujson.write(variants))
-              )
+    // First collect all the enum info without pushCommand
+    val enumInfo = sortedEnums.map { ce =>
+      val enumFqn = ce.getClass.getName
+      val fqnNorm = stripCompanionSuffix(enumFqn)
+      val simpleName = cleanSimpleName(ce.getClass) match {
+        case "" => fqnNorm
+        case s  => s
+      }
+      ce -> (enumFqn, simpleName, fqnNorm)
+    }
+
+    // Then emit pushCommands for unseen enums
+    enumInfo.foreach { case (ce, (enumFqn, simpleName, fqnNorm)) =>
+      if (!seen.contains(enumFqn)) {
+        val variants = ujson.Arr.from(ce.all.collect { case e: EnumType =>
+          ujson.Obj(
+            "name" -> ujson.Str(ce.nameOfValue(e.litValue).getOrElse("unknown")),
+            "value" -> ujson.Num(e.litValue.toDouble),
+            "valueStr" -> ujson.Str(e.litValue.toString)
+          )
+        })
+        pushCommand(
+          DefIntrinsic(
+            si,
+            EnumDefIntrinsic,
+            Seq.empty,
+            Seq(
+              "name" -> StringParam(simpleName),
+              "fqn" -> StringParam(fqnNorm),
+              "variants" -> StringParam(ujson.write(variants))
             )
           )
-          seen.add(enumFqn)
-        }
-
-        ce -> (simpleName, fqnNorm)
+        )
+        seen.add(enumFqn)
       }
-      .toMap
+    }
+
+    // Finally, build the result map
+    enumInfo.map { case (ce, (_, simpleName, fqnNorm)) =>
+      ce -> (simpleName, fqnNorm)
+    }.toMap
   }
 
   private def getEnumPairOpt(
@@ -452,7 +391,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
           ujson.Obj("__truncated" -> ujson.Bool(true), "truncatedAtDepth" -> ujson.Num(depth))
         } else {
           val fieldsObj = ujson.Obj()
-          r.elements.foreach { case (name, fieldData) =>
+          r.elements.toSeq.foreach { case (name, fieldData) =>
             fieldsObj(name) = buildDataJson(fieldData, enumNames, includeDirection = true, depth + 1)
           }
           fieldsObj
