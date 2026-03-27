@@ -482,6 +482,8 @@ private[chisel3] class DynamicContext(
   val elaborationTrace:   ElaborationTrace,
   val emitDebugTypeInfo:  Boolean = false
 ) {
+  var debugMaxStructureDepth: Int = 32
+
   val importedDefinitionAnnos = annotationSeq.collect { case a: ImportDefinitionAnnotation[_] => a }
 
   // Map from proto module name to ext-module name
@@ -1231,6 +1233,12 @@ private[chisel3] object Builder extends LazyLogging {
   def getModulePrefixSeperator: String = {
     chiselContext.get().modulePrefixSeperator
   }
+
+  def debugMaxStructureDepth: Int =
+    dynamicContextVar.value.map(_.debugMaxStructureDepth).getOrElse(32)
+
+  def setDebugMaxStructureDepth(depth: Int): Unit =
+    dynamicContextVar.value.foreach(_.debugMaxStructureDepth = depth)
 
   /** The representation of the state of the [[Builder]] at a current point in
     * time.  This is intended to capture _enough_ information to insert hardware

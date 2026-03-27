@@ -23,9 +23,8 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   private final val EnumDefIntrinsic = "circt_debug_enumdef"
   private final val MemInfoIntrinsic = "circt_debug_meminfo"
 
-  private var maxStructureDepth:                         Int = 32
-  private[chisel3] final def MaxStructureDepth:          Int = maxStructureDepth
-  private[chisel3] def setMaxStructureDepth(depth: Int): Unit = { maxStructureDepth = depth }
+  private[chisel3] final def MaxStructureDepth:          Int = Builder.debugMaxStructureDepth
+  private[chisel3] def setMaxStructureDepth(depth: Int): Unit = Builder.setDebugMaxStructureDepth(depth)
 
   private def debugPolicyOf(data: Data): DebugMetaPolicy = data match {
     case p: HasDebugMetaPolicy => p.debugMetaPolicy
