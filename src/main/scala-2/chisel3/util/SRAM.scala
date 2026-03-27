@@ -1,7 +1,7 @@
 package chisel3.util
 
 import chisel3._
-import chisel3.internal.{Builder, NamedComponent}
+import chisel3.internal.{Builder, DebugMetaPolicy, HasDebugMetaPolicy, NamedComponent}
 import chisel3.internal.binding.{FirrtlMemTypeBinding, SramPortBinding}
 import chisel3.experimental.{OpaqueType, SourceInfo}
 import chisel3.experimental.hierarchy.{instantiable, public, Definition, Instance, Instantiate}
@@ -147,7 +147,11 @@ class SRAMInterface[T <: Data](
   val numReadwritePorts: Int,
   val masked:            Boolean = false,
   val hasDescription:    Boolean = false
-) extends Bundle {
+) extends Bundle
+    with HasDebugMetaPolicy {
+
+  override val debugMetaPolicy =
+    DebugMetaPolicy(emitTypeTag = false)
 
   /** Public accessor for data type of this interface. */
   def dataType: T = tpe

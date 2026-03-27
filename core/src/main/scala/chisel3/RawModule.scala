@@ -3,6 +3,7 @@
 package chisel3
 
 import scala.util.Try
+import logger.LazyLogging
 import chisel3.experimental.{BaseModule, OpaqueType, SourceInfo, UnlocatableSourceInfo}
 import chisel3.internal._
 import chisel3.internal.binding._
@@ -20,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
   * This abstract base class is a user-defined module which does not include implicit clock and reset and supports
   * multiple IO() declarations.
   */
-abstract class RawModule extends BaseModule {
+abstract class RawModule extends BaseModule with LazyLogging {
 
   /** Hook to invoke hardware generators after a Module has been constructed and closed.
     *
@@ -165,15 +166,24 @@ abstract class RawModule extends BaseModule {
     // Evaluate any atModuleBodyEnd generators.
     evaluateAtModuleBodyEnd()
 
-    _closed = true
-
-    // Check to make sure that all ports can be named
-    checkPorts()
-
     // Take a second pass through any ids generated during atModuleBodyEnd blocks to finalize names for them.
     for (id <- _ids.view.drop(numInitialIds)) {
       nameId(id)
     }
+
+    try {
+      if (Builder.emitDebugTypeInfo) {
+        internal.DebugMetaEmitter.emitModuleMetaInScope(this, _ids.toIndexedSeq)(_sourceInfo)
+      }
+    } catch {
+      case e: Exception =>
+        logger.warn(s"Failed to emit debug metadata for module $name: ${e.getMessage}")
+    } finally {
+      _closed = true
+    }
+
+    // Check to make sure that all ports can be named
+    checkPorts()
 
     val firrtlPorts = getModulePortsAndLocators.map { case (port, sourceInfo, associations) =>
       Port(port, port.specifiedDirection, associations, sourceInfo)

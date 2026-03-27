@@ -59,7 +59,8 @@ class Elaborate extends Phase {
             chiselOptions.inlineTestIncluder,
             chiselOptions.suppressSourceInfo,
             false,
-            elaborationTrace
+            elaborationTrace,
+            emitDebugTypeInfo = chiselOptions.emitDebugTypeInfo
           )
         val (elaboratedCircuit, dut) = {
           Builder.build(Module(gen()), context)

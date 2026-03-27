@@ -7,8 +7,12 @@ import nsc.Global
 import nsc.plugins.{Plugin, PluginComponent}
 import scala.reflect.internal.util.NoPosition
 import scala.collection.mutable
+import java.util.concurrent.atomic.AtomicBoolean
 
-private[plugin] case class ChiselPluginArguments(val skipFiles: mutable.HashSet[String] = mutable.HashSet.empty) {
+private[plugin] case class ChiselPluginArguments(
+  val skipFiles:         mutable.HashSet[String] = mutable.HashSet.empty,
+  val emitDebugTypeInfo: AtomicBoolean = new AtomicBoolean(false)
+) {
   def useBundlePluginOpt = "useBundlePlugin"
   def useBundlePluginFullOpt = s"-P:${ChiselPlugin.name}:$useBundlePluginOpt"
   def genBundleElementsOpt = "genBundleElements"
@@ -76,6 +80,8 @@ class ChiselPlugin(val global: Global) extends Plugin {
       } else if (option == arguments.genBundleElementsOpt) {
         val msg = s"'${arguments.genBundleElementsOpt}' is now default behavior, you can remove the scalacOption."
         global.reporter.warning(NoPosition, msg)
+      } else if (option == "emitDebugTypeInfo") {
+        arguments.emitDebugTypeInfo.set(true)
       } else {
         error(s"Option not understood: '$option'")
       }
