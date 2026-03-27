@@ -192,7 +192,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
   it should "emit Vec structure in JSON" in {
     val chirrtl = emitWithDebug(new VecModule)
 
-    // Top-level Vec → typetag void form (firtool requirement)
+    // Top-level Vec -> typetag void form (firtool requirement)
     chirrtl should include("circt_debug_typetag")
     chirrtl should include("className = \"Vec\"")
 
@@ -814,14 +814,14 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     val chirrtlTypetagLines = chirrtl.split("\n").filter(_.contains("circt_debug_typetag"))
     chirrtlTypetagLines.exists(_.contains("className = \"Vec\"")) shouldBe true
 
-    // Vec → typetag void form (firtool constraint: TypeTag must have no outputs)
+    // Vec -> typetag void form (firtool constraint: TypeTag must have no outputs)
     val vecTagLines = chirrtl
       .split("\n")
       .filter(l => l.contains("circt_debug_typetag") && l.contains("Vec"))
     vecTagLines should not be empty
     all(vecTagLines) should not.include("= intrinsic(circt_debug_typetag")
 
-    // Leaf ground types → typetag void form (no "= intrinsic" prefix)
+    // Leaf ground types -> typetag void form (no "= intrinsic" prefix)
     // Filter out Vec and Bundle to get only leaf ground types (e.g., io.flag)
     val leafTagLines = chirrtl
       .split("\n")
@@ -836,7 +836,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
   it should "emit circt_debug_typenode for Bundle aggregate, not circt_debug_typetag" in {
     val chirrtl = emitWithDebug(new BundleModule)
 
-    // Bundle → typenode (dedicated op, no signal operand)
+    // Bundle -> typenode (dedicated op, no signal operand)
     val typenodeLines = chirrtl.split("\n").filter(_.contains("circt_debug_typenode"))
     typenodeLines should not be empty
     all(typenodeLines) should include("= intrinsic(circt_debug_typenode")

@@ -134,7 +134,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     val className = extractClassName(r.getClass, meta)
     val (sf, sl) = sourceLocParts(meta, Some(si))
 
-    // Bundle may contain flipped fields → cannot pass as signal operand.
+    // Bundle may contain flipped fields -> cannot pass as signal operand.
     // circt_debug_typenode is the dedicated op for non-passive aggregate structural tokens.
     val myHandle = IntrinsicExpr(
       TypeNodeIntrinsic,
