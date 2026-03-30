@@ -290,19 +290,10 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       val className = Literal(Constant(extractRhsClassName(dd, tpe)))
       val params = Literal(Constant(extractCtorParams(classified)))
       val paramTree = ctorArgsToTree(classified)
-      val sourceFile = {
-        val file = dd.pos.source.file
-        val path =
-          if (file.file == null) file.path
-          else SourceInfoFileResolver.resolve(file.file.toPath)
-        Literal(Constant(path))
-      }
-      val sourceLine = Literal(Constant(dd.pos.line))
 
       q"""{
         chisel3.debug.DebugMeta.withCtorArgs($paramTree) {
-          chisel3.debug.DebugMeta.record(
-            $named, $className, $params, $sourceFile, $sourceLine)
+          chisel3.debug.DebugMeta.record($named, $className, $params)
         }
       }"""
     }

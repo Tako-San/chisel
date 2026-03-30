@@ -633,21 +633,17 @@ private[chisel3] object Builder extends LazyLogging {
   def viewNamespace: Namespace = chiselContext.get.viewNamespace
 
   case class DebugMeta(
-    className:  String,
-    params:     String,
-    sourceFile: String,
-    sourceLine: Int
+    className: String,
+    params:    String
   )
 
   private[chisel3] def recordDebugMeta(
-    target:     HasId,
-    className:  String,
-    params:     String,
-    sourceFile: String,
-    sourceLine: Int
+    target:    HasId,
+    className: String,
+    params:    String
   ): Unit =
     if (dynamicContext.emitDebugTypeInfo)
-      dynamicContext.debugMetaMap(target._id) = DebugMeta(className, params, sourceFile, sourceLine)
+      dynamicContext.debugMetaMap(target._id) = DebugMeta(className, params)
 
   private[chisel3] def getDebugMeta(target: HasId): Option[DebugMeta] =
     if (dynamicContext.emitDebugTypeInfo)

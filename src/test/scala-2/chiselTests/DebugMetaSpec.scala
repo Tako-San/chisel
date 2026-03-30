@@ -166,13 +166,6 @@ class DebugMetaSpec extends AnyFlatSpec with Matchers {
     }
   }
 
-  it should "emit circt_debug_meminfo with sourceLoc field present" in {
-    val chirrtl = elaborate(new MemSrcLocModule)
-    chirrtl should include("circt_debug_meminfo")
-    // The new format has separate sourceFile and sourceLine native parameters instead of sourceLoc
-    chirrtl should include("sourceFile =")
-  }
-
   // Verify meminfo contains a `memName` field (native parameter).
   it should "include 'name' field in circt_debug_meminfo payload" in {
     val chirrtl = elaborate(new MemSrcLocModule)

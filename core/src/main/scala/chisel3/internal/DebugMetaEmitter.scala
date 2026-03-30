@@ -80,16 +80,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
         case _ => bindingStr(data).isDefined
       }
 
-  private def sourceLocParts(
-    metaOpt: Option[Builder.DebugMeta],
-    siOpt:   Option[SourceInfo]
-  ): (String, BigInt) =
-    metaOpt
-      .filter(_.sourceFile.nonEmpty)
-      .map(m => (m.sourceFile, BigInt(m.sourceLine)))
-      .orElse(siOpt.collect { case l: SourceLine => (l.filename, BigInt(l.line)) })
-      .getOrElse(("", BigInt(-1)))
-
   private def resolvedWidth(data: Data): Option[Int] = data match {
     case _: Aggregate => None
     case _ =>
@@ -131,7 +121,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   )(implicit si: SourceInfo): Unit = {
     val meta = Builder.getDebugMeta(r)
     val className = extractClassName(r.getClass, meta)
-    val (sf, sl) = sourceLocParts(meta, Some(si))
 
     // Bundle may contain flipped fields -> cannot pass as signal operand.
     // circt_debug_typenode is the dedicated op for non-passive aggregate structural tokens.
@@ -141,9 +130,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       "name" -> StringParam(r.instanceName),
       "className" -> StringParam(className),
       "binding" -> StringParam(bindingStr(r).getOrElse("unknown")),
-      "direction" -> StringParam(directionStr(r)),
-      "sourceFile" -> StringParam(sf),
-      "sourceLine" -> IntParam(sl)
+      "direction" -> StringParam(directionStr(r))
     )(parentHandle.toSeq: _*)
 
     r.elements.toSeq.foreach { case (_, fdata) =>
@@ -160,7 +147,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     parentHandle: Option[Data]
   )(implicit si: SourceInfo): Unit = {
     val meta = Builder.getDebugMeta(v)
-    val (sf, sl) = sourceLocParts(meta, Some(si))
     val binding = bindingStr(v)
 
     // Emit exactly ONE void circt_debug_typetag for the Vec signal
@@ -172,9 +158,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
         "className" -> StringParam("Vec"),
         "binding" -> StringParam(binding.get),
         "direction" -> StringParam(directionStr(v)),
-        "vecLength" -> IntParam(BigInt(v.length)),
-        "sourceFile" -> StringParam(sf),
-        "sourceLine" -> IntParam(sl)
+        "vecLength" -> IntParam(BigInt(v.length))
       )(v +: parentHandle.toSeq: _*) // Only signal operand, no myHandle returned
     }
     // No myHandle, no recursion into elements - handled by CIRCT
@@ -190,7 +174,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     val neededEnums = collectRequiredEnums(data)
     val enumNames = emitPendingEnumDefs(neededEnums)
     val meta = Builder.getDebugMeta(data)
-    val (sf, sl) = sourceLocParts(meta, Some(si))
 
     val enumParams = getEnumPairOpt(data, enumNames)
       .fold(Seq.empty[(String, Param)]) { case (s, fqn) =>
@@ -202,9 +185,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       "className" -> StringParam(extractClassName(data.getClass, meta)),
       "width" -> IntParam(resolvedWidth(data).map(BigInt(_)).getOrElse(BigInt(-1))),
       "binding" -> StringParam(bindingStr(data).getOrElse("unknown")),
-      "direction" -> StringParam(directionStr(data)),
-      "sourceFile" -> StringParam(sf),
-      "sourceLine" -> IntParam(sl)
+      "direction" -> StringParam(directionStr(data))
     ) ++ meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
       enumParams
 
@@ -221,14 +202,11 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     }
     val dataTypeJson = buildTypeJson(mem.t, enumNames)
     val meta = Builder.getDebugMeta(mem)
-    val (sourceFile, sourceLine) = sourceLocParts(meta, Some(si))
 
     val baseParams = Seq(
       "memName" -> StringParam(mem.instanceName),
       "memoryKind" -> StringParam(memKind),
       "depth" -> IntParam(mem.length),
-      "sourceFile" -> StringParam(sourceFile),
-      "sourceLine" -> IntParam(sourceLine),
       "dataType" -> StringParam(ujson.write(dataTypeJson))
     )
 
@@ -254,16 +232,13 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       case mod if !mod.isInstanceOf[BaseBlackBox] => mod
     }.foreach { mod =>
       val debugMetaOpt = Builder.getDebugMeta(mod)
-      val (sourceFile, sourceLine) = sourceLocParts(debugMetaOpt, Some(si))
       val className = extractClassName(mod.getClass, debugMetaOpt, isModule = true)
 
       val ctorParamsArg = serializeCtorArgs(Builder.peekPendingCtorArgs(), mod.name)
 
       val baseParams = Seq(
         "className" -> StringParam(className),
-        "name" -> StringParam(mod.name),
-        "sourceFile" -> StringParam(sourceFile),
-        "sourceLine" -> IntParam(sourceLine)
+        "name" -> StringParam(mod.name)
       )
 
       pushCommand(

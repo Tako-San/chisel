@@ -15,7 +15,7 @@ class BuilderDebugMetaSpec extends AnyFlatSpec with Matchers {
   it should "not throw during recordDebugMeta" in {
     class TestModule extends RawModule {
       val w = Wire(UInt(8.W))
-      Builder.recordDebugMeta(w, "UInt", "width=8", "test.scala", 10)
+      Builder.recordDebugMeta(w, "UInt", "width=8")
     }
 
     // Verifies no exception is thrown during recording
@@ -73,7 +73,7 @@ class BuilderDebugMetaSpec extends AnyFlatSpec with Matchers {
 
     class TestModule extends RawModule {
       val w = Wire(UInt(8.W))
-      Builder.recordDebugMeta(w, "UInt", "width=8", "test.scala", 10)
+      Builder.recordDebugMeta(w, "UInt", "width=8")
       val infoOpt = Builder.getDebugMeta(w)
       capturedInfo = infoOpt
       infoOpt shouldBe defined

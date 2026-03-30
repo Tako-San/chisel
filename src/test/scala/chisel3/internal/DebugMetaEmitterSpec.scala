@@ -318,18 +318,6 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     chirrtl should include("circt_debug_moduleinfo")
     chirrtl should include("className =")
     chirrtl should include("name =")
-    chirrtl should include("sourceFile =")
-    chirrtl should include("sourceLine =")
-  }
-
-  it should "emit non-unknown sourceLoc in moduleinfo" in {
-    val chirrtl = emitWithDebug(new MyModule)
-    chirrtl should include("circt_debug_moduleinfo")
-    chirrtl should include("sourceFile =")
-    chirrtl should include("sourceLine =")
-    // Check that source location fields are present (they may be -1/empty if not available)
-    val sourceFiles = extractStringParam(chirrtl, "moduleinfo", "sourceFile")
-    sourceFiles should not be empty
   }
 
   it should "validate enum JSON payload with enumType and enumdef" in {

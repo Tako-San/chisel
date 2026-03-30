@@ -18,13 +18,11 @@ object DebugMeta {
     * @return The target Chisel construct
     */
   def record[T <: HasId](
-    target:     T,
-    className:  String,
-    params:     String,
-    sourceFile: String,
-    sourceLine: Int
+    target:    T,
+    className: String,
+    params:    String
   ): T = {
-    Builder.recordDebugMeta(target, className, params, sourceFile, sourceLine)
+    Builder.recordDebugMeta(target, className, params)
     target
   }
 
