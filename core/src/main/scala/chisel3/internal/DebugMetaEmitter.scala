@@ -89,19 +89,21 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
   private[chisel3] def emitModuleMetaInScope(
     mod: RawModule,
-    ids: Iterable[HasId]
+    ids: Iterable[HasId],
+    portSiMap:    Map[Long, SourceInfo]
   )(implicit si: SourceInfo): Unit = {
     val saved = Builder.currentModule
     Builder.currentModule = Some(mod)
-    try { emitModuleMeta(ids) }
+    try { emitModuleMeta(ids, portSiMap) }
     finally { Builder.currentModule = saved }
   }
 
-  private def emitModuleMeta(ids: Iterable[HasId])(implicit si: SourceInfo): Unit = {
+  private def emitModuleMeta(ids: Iterable[HasId], portSiMap:    Map[Long, SourceInfo])(implicit si: SourceInfo): Unit = {
     emitModuleInfo()
     ids.foreach {
       case d: Data if d.isSynthesizable && isDebuggable(d) =>
-        emitDataMeta(d)
+        val dataSi = portSiMap.getOrElse(d._id, si)
+        emitDataMeta(d)(dataSi)
       case m: MemBase[_] =>
         emitMemMetaTyped(m.asInstanceOf[MemBase[Data] @unchecked])
       case _ =>

@@ -173,7 +173,7 @@ abstract class RawModule extends BaseModule with LazyLogging {
 
     try {
       if (Builder.emitDebugTypeInfo) {
-        internal.DebugMetaEmitter.emitModuleMetaInScope(this, _ids.toIndexedSeq)(_sourceInfo)
+        internal.DebugMetaEmitter.emitModuleMetaInScope(this, _ids.toIndexedSeq, getCurIDsAndLocators)(_sourceInfo)
       }
     } catch {
       case e: Exception =>
