@@ -31,27 +31,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     case _ => DebugMetaPolicy()
   }
 
-  private def bindingStr(data: Data): Option[String] =
-    data.topBindingOpt.collect {
-      case _: PortBinding       => "port"
-      case _: RegBinding        => "reg"
-      case _: WireBinding       => "wire"
-      case _: MemoryPortBinding => "memport"
-      case _: SramPortBinding   => "sramport"
-      case _: OpBinding         => "node"
-    }.orElse(data.binding.collect {
-      // For Vec.sample_element, derive binding from parent Vec's binding
-      case SampleElementBinding(parent) if parent.isInstanceOf[Vec[_]] =>
-        bindingStr(parent)
-    }.flatten)
-
-  private def directionStr(data: Data): String = data.specifiedDirection match {
-    case SpecifiedDirection.Input       => "input"
-    case SpecifiedDirection.Output      => "output"
-    case SpecifiedDirection.Flip        => "flip"
-    case SpecifiedDirection.Unspecified => "unspecified"
-  }
-
   private def localName(data: Data): String = {
     val full = data.instanceName
     val dot = full.lastIndexOf('.')
@@ -76,21 +55,14 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   private def isDebuggable(data: Data): Boolean =
     debugPolicyOf(data).emitTypeTag &&
       data.topBindingOpt.exists {
-        case _: OpBinding => Builder.getDebugMeta(data).isDefined
-        case _ => bindingStr(data).isDefined
+        case _: PortBinding | _: RegBinding | _: WireBinding | _: MemoryPortBinding | _: SramPortBinding => true
+        case _                                                                                           => false
       }
 
-  private def resolvedWidth(data: Data): Option[Int] = data match {
-    case _: Aggregate => None
-    case _ =>
-      try data.widthOption
-      catch { case _: Exception => None }
-  }
-
   private[chisel3] def emitModuleMetaInScope(
-    mod: RawModule,
-    ids: Iterable[HasId],
-    portSiMap:    Map[Long, SourceInfo]
+    mod:       RawModule,
+    ids:       Iterable[HasId],
+    portSiMap: Map[Long, SourceInfo]
   )(implicit si: SourceInfo): Unit = {
     val saved = Builder.currentModule
     Builder.currentModule = Some(mod)
@@ -98,14 +70,15 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     finally { Builder.currentModule = saved }
   }
 
-  private def emitModuleMeta(ids: Iterable[HasId], portSiMap:    Map[Long, SourceInfo])(implicit si: SourceInfo): Unit = {
+  private def emitModuleMeta(ids: Iterable[HasId], portSiMap: Map[Long, SourceInfo])(implicit si: SourceInfo): Unit = {
     emitModuleInfo()
     ids.foreach {
       case d: Data if d.isSynthesizable && isDebuggable(d) =>
         val dataSi = portSiMap.getOrElse(d._id, si)
         emitDataMeta(d)(dataSi)
       case m: MemBase[_] =>
-        emitMemMetaTyped(m.asInstanceOf[MemBase[Data] @unchecked])
+        val dataSi = portSiMap.getOrElse(m._id, si)
+        emitMemMetaTyped(m.asInstanceOf[MemBase[Data] @unchecked])(dataSi)
       case _ =>
     }
   }
@@ -130,9 +103,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       TypeNodeIntrinsic,
       UInt(0.W),
       "name" -> StringParam(r.instanceName),
-      "className" -> StringParam(className),
-      "binding" -> StringParam(bindingStr(r).getOrElse("unknown")),
-      "direction" -> StringParam(directionStr(r))
+      "className" -> StringParam(className)
     )(parentHandle.toSeq: _*)
 
     r.elements.toSeq.foreach { case (_, fdata) =>
@@ -149,21 +120,12 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     parentHandle: Option[Data]
   )(implicit si: SourceInfo): Unit = {
     val meta = Builder.getDebugMeta(v)
-    val binding = bindingStr(v)
-
-    // Emit exactly ONE void circt_debug_typetag for the Vec signal
-    // CIRCT will decompose the vector type via buildDebugAggregateWithMeta
-    if (binding.isDefined) {
-      Intrinsic(
-        TypeTagIntrinsic,
-        "name" -> StringParam(v.instanceName),
-        "className" -> StringParam("Vec"),
-        "binding" -> StringParam(binding.get),
-        "direction" -> StringParam(directionStr(v)),
-        "vecLength" -> IntParam(BigInt(v.length))
-      )(v +: parentHandle.toSeq: _*) // Only signal operand, no myHandle returned
-    }
-    // No myHandle, no recursion into elements - handled by CIRCT
+    Intrinsic(
+      TypeTagIntrinsic,
+      "name" -> StringParam(v.instanceName),
+      "className" -> StringParam("Vec"),
+      "vecLength" -> IntParam(BigInt(v.length))
+    )(v +: parentHandle.toSeq: _*)
   }
 
   private def emitLeafMeta(
@@ -185,9 +147,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     val params: Seq[(String, Param)] = Seq(
       "name" -> StringParam(data.instanceName),
       "className" -> StringParam(extractClassName(data.getClass, meta)),
-      "width" -> IntParam(resolvedWidth(data).map(BigInt(_)).getOrElse(BigInt(-1))),
-      "binding" -> StringParam(bindingStr(data).getOrElse("unknown")),
-      "direction" -> StringParam(directionStr(data))
     ) ++ meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
       enumParams
 
@@ -335,15 +294,12 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   private def buildDataJson(
     data:             Data,
     enumNames:        Map[ChiselEnum, (String, String)],
-    includeDirection: Boolean,
     depth:            Int
   ): ujson.Obj = {
     val meta = Builder.getDebugMeta(data)
     val obj = ujson.Obj(
       "className" -> ujson.Str(extractClassName(data.getClass, meta)),
-      "width" -> ujson.Num(resolvedWidth(data).map(_.toDouble).getOrElse(-1.0))
     )
-    if (includeDirection) obj("direction") = ujson.Str(directionStr(data))
 
     getEnumPairOpt(data, enumNames).foreach { case (simpleName, fqn) =>
       obj("enumType") = ujson.Str(simpleName)
@@ -361,7 +317,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
         } else {
           val fieldsObj = ujson.Obj()
           r.elements.toSeq.foreach { case (name, fieldData) =>
-            fieldsObj(name) = buildDataJson(fieldData, enumNames, includeDirection = true, depth + 1)
+            fieldsObj(name) = buildDataJson(fieldData, enumNames, depth + 1)
           }
           fieldsObj
         }
@@ -385,7 +341,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
                 obj("__truncated") = ujson.Bool(true)
                 obj("truncatedAtDepth") = ujson.Num(depth)
               } else {
-                obj("element") = buildDataJson(elem, enumNames, includeDirection = false, depth + 1)
+                obj("element") = buildDataJson(elem, enumNames, depth + 1)
               }
           }
         }
@@ -396,7 +352,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   }
 
   private def buildTypeJson(t: Data, enumNames: Map[ChiselEnum, (String, String)] = Map.empty): ujson.Value =
-    buildDataJson(t, enumNames, includeDirection = false, depth = 0)
+    buildDataJson(t, enumNames, depth = 0)
 
   private def serializeCtorArgs(args: Seq[Any], modName: String): Seq[(String, Param)] =
     Option
