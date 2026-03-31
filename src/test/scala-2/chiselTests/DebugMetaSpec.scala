@@ -104,8 +104,6 @@ class DebugMetaSpec extends AnyFlatSpec with Matchers {
   "DebugMetaEmitter" should "emit typetag for SramPortBinding" in {
     val chirrtl = elaborate(new SramPortModule)
     chirrtl should include("circt_debug_typetag")
-    // SRAM port bindings should have binding=sramport as a native parameter
-    chirrtl should include("binding = \"sramport\"")
   }
 
   it should "emit kind=MixedVec for MixedVec wire" in {

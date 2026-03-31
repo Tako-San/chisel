@@ -144,10 +144,11 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
         Seq("enumType" -> StringParam(s), "enumTypeFqn" -> StringParam(fqn))
       }
 
-    val params: Seq[(String, Param)] = Seq(
+    val params = Seq(
       "name" -> StringParam(data.instanceName),
-      "className" -> StringParam(extractClassName(data.getClass, meta)),
-    ) ++ meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
+      "className" -> StringParam(extractClassName(data.getClass, meta))
+    ) ++
+      meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
       enumParams
 
     val operands: Seq[Data] = Seq(data) ++ parentHandle.toSeq
@@ -292,13 +293,13 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
   }
 
   private def buildDataJson(
-    data:             Data,
-    enumNames:        Map[ChiselEnum, (String, String)],
-    depth:            Int
+    data:      Data,
+    enumNames: Map[ChiselEnum, (String, String)],
+    depth:     Int
   ): ujson.Obj = {
     val meta = Builder.getDebugMeta(data)
     val obj = ujson.Obj(
-      "className" -> ujson.Str(extractClassName(data.getClass, meta)),
+      "className" -> ujson.Str(extractClassName(data.getClass, meta))
     )
 
     getEnumPairOpt(data, enumNames).foreach { case (simpleName, fqn) =>
