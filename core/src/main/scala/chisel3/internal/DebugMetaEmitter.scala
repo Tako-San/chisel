@@ -257,8 +257,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
         val variants = ujson.Arr.from(ce.all.collect { case e: EnumType =>
           ujson.Obj(
             "name" -> ujson.Str(ce.nameOfValue(e.litValue).getOrElse("unknown")),
-            "value" -> ujson.Num(e.litValue.toDouble),
-            "valueStr" -> ujson.Str(e.litValue.toString)
+            "value" -> ujson.Num(e.litValue.toDouble)
           )
         })
         pushCommand(
