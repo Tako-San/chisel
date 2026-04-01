@@ -489,7 +489,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
       classNames should not contain "AnonymousBundle"
     }
     withClue("Anonymous module should have className=AnonymousModule") {
-      classNames should contain("AnonymousModule")
+      classNames.exists(_.startsWith("AnonymousModule")) should be(true)
     }
   }
 

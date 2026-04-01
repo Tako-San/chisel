@@ -2,7 +2,8 @@
 
 package chisel3.internal
 
-import scala.collection.mutable
+import scala.collection.mutable.HashMap
+import scala.collection.immutable.SortedSet
 
 import chisel3._
 import chisel3.{Intrinsic, IntrinsicExpr}
@@ -17,14 +18,17 @@ import ujson._
 
 private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
-  private final val TypeTagIntrinsic = "circt_debug_typetag" // leaf + Vec (passive, carries signal)
-  private final val TypeNodeIntrinsic = "circt_debug_typenode" // Bundle structural token (no signal)
+  private final val TypeTagIntrinsic = "circt_debug_typetag"
+  private final val TypeNodeIntrinsic = "circt_debug_typenode"
   private final val ModuleInfoIntrinsic = "circt_debug_moduleinfo"
   private final val EnumDefIntrinsic = "circt_debug_enumdef"
   private final val MemInfoIntrinsic = "circt_debug_meminfo"
 
   private[chisel3] final def MaxStructureDepth:          Int = Builder.debugMaxStructureDepth
   private[chisel3] def setMaxStructureDepth(depth: Int): Unit = Builder.setDebugMaxStructureDepth(depth)
+
+  private implicit val chiselEnumOrdering: Ordering[ChiselEnum] =
+    Ordering.by(_.getClass.getName)
 
   private def debugPolicyOf(data: Data): DebugMetaPolicy = data match {
     case p: HasDebugMetaPolicy => p.debugMetaPolicy
@@ -39,9 +43,9 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
   private def stripCompanionSuffix(name: String): String = name.stripSuffix("$")
 
-  private def stripAnonNumericSuffix(name: String): String = {
-    val AnonPattern = """^(.*?)(\$\d+)+$""".r
+  private val AnonPattern = """^(.*?)(\$\d+)+$""".r
 
+  private def stripAnonNumericSuffix(name: String): String = {
     name match {
       case AnonPattern(base, _)   => base
       case s if s.startsWith("$") => ""
@@ -49,8 +53,15 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     }
   }
 
-  private def cleanSimpleName(cls: Class[_]): String =
-    stripAnonNumericSuffix(stripCompanionSuffix(cls.getSimpleName.stripSuffix("$")))
+  private val classNameCache = HashMap[Class[_], String]()
+
+  private def cleanSimpleName(cls: Class[_]): String = {
+    classNameCache.getOrElseUpdate(
+      cls, {
+        stripAnonNumericSuffix(stripCompanionSuffix(cls.getSimpleName.stripSuffix("$")))
+      }
+    )
+  }
 
   private def isDebuggable(data: Data): Boolean =
     debugPolicyOf(data).emitTypeTag &&
@@ -106,7 +117,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       "className" -> StringParam(className)
     )(parentHandle.toSeq: _*)
 
-    r.elements.toSeq.foreach { case (_, fdata) =>
+    r.elements.foreach { case (_, fdata) =>
       fdata match {
         case nested: Record => emitRecordMeta(nested, Some(myHandle))
         case nested: Vec[_] => emitVecMeta(nested, Some(myHandle))
@@ -132,7 +143,6 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
     data:         Data,
     parentHandle: Option[Data]
   )(implicit si: SourceInfo): Unit = {
-    // Guard for sample_element or other unbound Data
     if (data.topBindingOpt.isEmpty) return
 
     val neededEnums = collectRequiredEnums(data)
@@ -218,41 +228,44 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
       case Some(m) => stripAnonNumericSuffix(stripCompanionSuffix(m.className))
       case None    => cleanSimpleName(cls)
     }
-    if (clean.isEmpty) (if (isModule) "AnonymousModule" else "AnonymousBundle") else clean
+    if (clean.isEmpty) {
+      val id = Integer.toHexString(System.identityHashCode(cls))
+      val prefix = if (isModule) "AnonymousModule" else "AnonymousBundle"
+      s"${prefix}_$id"
+    } else { clean }
   }
 
-  private def collectRequiredEnums(data: Data): Set[ChiselEnum] = data match {
-    case e: EnumType =>
-      Option(e.factory).collect { case ce: ChiselEnum => ce }.toSet
-    case r: Record =>
-      r.elements.values.toVector.flatMap(collectRequiredEnums).toSet
-    case v: Vec[_] if v.length > 0 =>
-      Option(v.sample_element)
-        .map(collectRequiredEnums)
-        .getOrElse(Set.empty)
-    case _ =>
-      Set.empty
+  private def collectRequiredEnums(data: Data): SortedSet[ChiselEnum] = {
+    val builder = SortedSet.newBuilder[ChiselEnum]
+
+    def collect(d: Data): Unit = d match {
+      case e: EnumType =>
+        Option(e.factory).collect { case ce: ChiselEnum => ce }.foreach(builder += _)
+      case r: Record =>
+        r.elements.values.foreach(collect)
+      case v: Vec[_] if v.length > 0 =>
+        Option(v.sample_element).foreach(collect)
+      case _ =>
+    }
+
+    collect(data)
+    builder.result()
   }
 
   private def emitPendingEnumDefs(
-    enums: Set[ChiselEnum]
+    enums: SortedSet[ChiselEnum]
   )(implicit si: SourceInfo): Map[ChiselEnum, (String, String)] = {
     val seen = Builder.emittedDebugEnums
-    val sortedEnums = enums.toSeq.sortBy(_.getClass.getName)
+    val builder = Map.newBuilder[ChiselEnum, (String, String)]
 
-    // First collect all the enum info without pushCommand
-    val enumInfo = sortedEnums.map { ce =>
+    enums.foreach { ce =>
       val enumFqn = ce.getClass.getName
       val fqnNorm = stripCompanionSuffix(enumFqn)
       val simpleName = cleanSimpleName(ce.getClass) match {
         case "" => fqnNorm
         case s  => s
       }
-      ce -> (enumFqn, simpleName, fqnNorm)
-    }
 
-    // Then emit pushCommands for unseen enums
-    enumInfo.foreach { case (ce, (enumFqn, simpleName, fqnNorm)) =>
       if (!seen.contains(enumFqn)) {
         val variants = ujson.Arr.from(ce.all.collect { case e: EnumType =>
           ujson.Obj(
@@ -274,12 +287,11 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
         )
         seen.add(enumFqn)
       }
+
+      builder += (ce -> (simpleName, fqnNorm))
     }
 
-    // Finally, build the result map
-    enumInfo.map { case (ce, (_, simpleName, fqnNorm)) =>
-      ce -> (simpleName, fqnNorm)
-    }.toMap
+    builder.result()
   }
 
   private def getEnumPairOpt(
@@ -316,7 +328,7 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
           ujson.Obj("__truncated" -> ujson.Bool(true), "truncatedAtDepth" -> ujson.Num(depth))
         } else {
           val fieldsObj = ujson.Obj()
-          r.elements.toSeq.foreach { case (name, fieldData) =>
+          r.elements.foreach { case (name, fieldData) =>
             fieldsObj(name) = buildDataJson(fieldData, enumNames, depth + 1)
           }
           fieldsObj
