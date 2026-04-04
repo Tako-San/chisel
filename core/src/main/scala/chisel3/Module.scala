@@ -599,6 +599,10 @@ package experimental {
       }
     }
 
+    private[chisel3] def getCurIDsAndLocators: Map[Long, SourceInfo] = {
+      _ports.toSeq.map { case (port, si) => port._id -> si }.toMap
+    }
+
     /** Get IOs that are currently bound to this module.
       */
     private[chisel3] def getIOs: Seq[Data] = {

@@ -33,6 +33,12 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
 
   class MyTypingTransformer(unit: CompilationUnit) extends TypingTransformer(unit) with ChiselInnerUtils {
 
+    private val MaxCtorParamLength = 128 // Limits JSON payload size to prevent overflow on cyclic structures
+
+    private final val MaxAstTraversalDepth = 8 // Prevents stack overflow; typical constructor nesting <8 levels
+
+    private val SkippedMethodNames = Set("suggestName", "do_apply")
+
     private def shouldMatchGen(bases: Tree*): Type => Boolean = {
       val cache = mutable.HashMap.empty[Type, Boolean]
       val baseTypes = bases.map(inferType)
@@ -85,7 +91,6 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       }
     }
 
-    private val shouldMatchData: Type => Boolean = shouldMatchGen(tq"chisel3.Data")
     // Checking for all chisel3.internal.NamedComponents, but since it is internal, we instead have
     // to match the public subtypes
     private val shouldMatchNamedComp: Type => Boolean =
@@ -99,10 +104,19 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
       )
     private val shouldMatchModule:   Type => Boolean = shouldMatchGen(tq"chisel3.experimental.BaseModule")
     private val shouldMatchInstance: Type => Boolean = shouldMatchGen(tq"chisel3.experimental.hierarchy.Instance[_]")
+    private val matchHasIdData: Type => Boolean = shouldMatchGen(
+      tq"chisel3.Data",
+      tq"chisel3.MemBase[_]"
+    )
     private val shouldMatchChiselPrefixed: Type => Boolean =
       shouldMatchGen(
         tq"chisel3.experimental.AffectsChiselPrefix"
       )
+
+    private def rhsIsValid(dd: ValDef): Boolean = dd.rhs match {
+      case EmptyTree | Literal(Constant(null)) => false
+      case _                                   => true
+    }
 
     // Indicates whether a ValDef is properly formed to get name
     private def okVal(dd: ValDef): Boolean = {
@@ -120,15 +134,8 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
         badFlags.forall { x => !mods.hasFlag(x) }
       }
 
-      // Ensure expression isn't null, as you can't call `null.autoName("myname")`
-      val isNull = dd.rhs match {
-        case Literal(Constant(null)) => true
-        case _                       => false
-      }
-
-      okFlags(dd.mods) && !isNull && dd.rhs != EmptyTree
+      okFlags(dd.mods) && rhsIsValid(dd)
     }
-    // TODO Unify with okVal
     private def okUnapply(dd: ValDef): Boolean = {
 
       // These were found through trial and error
@@ -146,31 +153,17 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
         )
         goodFlags.forall(f => mods.hasFlag(f)) && badFlags.forall(f => !mods.hasFlag(f))
       }
-
-      // Ensure expression isn't null, as you can't call `null.autoName("myname")`
-      val isNull = dd.rhs match {
-        case Literal(Constant(null)) => true
-        case _                       => false
-      }
       val tpe = inferType(dd.tpt)
-      definitions.isTupleType(tpe) && okFlags(dd.mods) && !isNull && dd.rhs != EmptyTree
+      definitions.isTupleType(tpe) && okFlags(dd.mods) && rhsIsValid(dd)
     }
 
-    private def findUnapplyNames(tree: Tree): Option[List[String]] = {
-      val applyArgs: Option[List[Tree]] = tree match {
-        case Match(_, List(CaseDef(_, _, Apply(_, args)))) => Some(args)
-        case _                                             => None
-      }
-      applyArgs.flatMap { args =>
-        var ok = true
-        val result = mutable.ListBuffer[String]()
-        args.foreach {
-          case Ident(TermName(name)) => result += name
-          // Anything unexpected and we abort
-          case _ => ok = false
+    private def findUnapplyNames(tree: Tree): Option[List[String]] = tree match {
+      case Match(_, List(CaseDef(_, _, Apply(_, args)))) =>
+        args.foldLeft(Option(List.empty[String])) {
+          case (Some(acc), Ident(TermName(n))) => Some(acc :+ n)
+          case _                               => None
         }
-        if (ok) Some(result.toList) else None
-      }
+      case _ => None
     }
 
     // Whether this val is directly enclosed by a Bundle type
@@ -181,29 +174,151 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
     private def stringFromTermName(name: TermName): String =
       name.toString.trim() // Remove trailing space (Scalac implementation detail)
 
+    private def mkTransformed(dd: ValDef): (String, Tree) = {
+      val str = stringFromTermName(dd.name)
+      val newRHS = transform(dd.rhs)
+      (str, newRHS)
+    }
+
+    private def mkNamed(dd: ValDef): Tree = {
+      val (str, newRHS) = mkTransformed(dd)
+      q"chisel3.withName($str)($newRHS)"
+    }
+
+    private sealed trait CtorArg
+    private case class KnownArg(tree: Tree, str: String) extends CtorArg
+    private case object UnknownArg extends CtorArg
+
+    private def classifyLiteral(arg: Tree): CtorArg = arg match {
+      case Literal(Constant(null))       => KnownArg(q"null", "null")
+      case Literal(Constant(b: Boolean)) => KnownArg(q"$b", b.toString)
+      case Literal(Constant(i: Int))     => KnownArg(q"$i", i.toString)
+      case Literal(Constant(l: Long))    => KnownArg(Literal(Constant(l)), l.toString)
+      case Literal(Constant(f: Float))   => KnownArg(q"$f", f.toString)
+      case Literal(Constant(d: Double))  => KnownArg(q"$d", d.toString)
+      case Literal(Constant(s: String))  => KnownArg(q"$s", s)
+      case Literal(Constant(c: Char))    => KnownArg(q"$c", c.toString)
+      case _                             => UnknownArg
+    }
+
+    private def safeTruncate(s: String, maxLen: Int = MaxCtorParamLength): String = {
+      val end = s.offsetByCodePoints(0, s.codePointCount(0, maxLen))
+      s.substring(0, end) + "..."
+    }
+
+    private def truncate(s: String): String =
+      if (s.length > MaxCtorParamLength) safeTruncate(s) else s
+
+    private def extractCtorParams(classified: List[CtorArg]): String =
+      classified.collect { case KnownArg(_, s) => truncate(s) }.mkString(",")
+
+    private def moduleWrappedArg(t: Tree): Option[Tree] = t match {
+      case Apply(Select(m, nme.apply), List(Function(_, body))) if isModuleSym(m)   => Some(body)
+      case Apply(TypeApply(Select(m, _), _), List(arg)) if isModuleSym(m)           => Some(arg)
+      case Apply(Select(m, _), List(arg)) if isModuleSym(m)                         => Some(arg)
+      case Apply(Apply(TypeApply(Select(m, _), _), List(arg)), _) if isModuleSym(m) => Some(arg)
+      case _                                                                        => None
+    }
+
+    private def findNewArgs(t: Tree, depth: Int = 0): Option[List[Tree]] = {
+      if (depth > MaxAstTraversalDepth) {
+        return None
+      }
+
+      t match {
+        case Apply(Select(New(_), nme.CONSTRUCTOR), args) =>
+          Some(args)
+        case Apply(innerApply: Apply, _) =>
+          findNewArgs(innerApply, depth + 1)
+        case Apply(Select(qual, name), _) if SkippedMethodNames.contains(name.decoded) =>
+          findNewArgs(qual, depth + 1)
+        case Block(_, expr) =>
+          findNewArgs(expr, depth + 1)
+        case Typed(expr, _) =>
+          findNewArgs(expr, depth + 1)
+        case Function(_, body) =>
+          findNewArgs(body, depth + 1)
+        case _ =>
+          moduleWrappedArg(t).flatMap(findNewArgs(_, depth + 1))
+      }
+    }
+
+    private def isModuleSym(tree: Tree): Boolean = tree match {
+      case t if t.symbol != null && t.symbol != NoSymbol =>
+        t.symbol.fullName == "chisel3.Module"
+      case Ident(TermName("Module")) => true
+      case _                         => false
+    }
+
+    private def ctorArgsToTree(classified: List[CtorArg]): Tree = {
+      val trees = classified.map {
+        case KnownArg(t, _) => t
+        case UnknownArg     => q"(null: AnyRef)"
+      }
+      // Use `_root_.scala.Seq.empty` instead of `Nil` to avoid issues with name shadowing
+      if (trees.isEmpty || classified.forall(_ == UnknownArg))
+        q"_root_.scala.Seq.empty"
+      else
+        q"_root_.scala.Seq[Any](..$trees)"
+    }
+
+    private def extractRhsClassName(dd: ValDef, tpe: Type): String =
+      if (dd.rhs == null || dd.rhs == EmptyTree) tpe.typeSymbol.name.toString
+      else {
+        val rhsTpe = scala.util.Try(inferType(dd.rhs)).getOrElse(tpe)
+        val n = rhsTpe.typeSymbol.name.toString
+        if (n == "$anon" || n == "<error>") "" else n
+      }
+
+    private def maybeWrapDebug(
+      dd:         ValDef,
+      tpe:        Type,
+      named:      Tree,
+      guardCheck: Boolean = true
+    ): Tree =
+      if (guardCheck && arguments.emitDebugTypeInfo.get) {
+        val classified = findNewArgs(dd.rhs).getOrElse(Nil).map(classifyLiteral)
+        wrapWithDebugRecording(dd, tpe, named, classified)
+      } else named
+
+    private def wrapWithDebugRecording(
+      dd:         ValDef,
+      tpe:        Type,
+      named:      Tree,
+      classified: List[CtorArg] = Nil
+    ): Tree = {
+      val className = Literal(Constant(extractRhsClassName(dd, tpe)))
+      val params = Literal(Constant(extractCtorParams(classified)))
+      val paramTree = ctorArgsToTree(classified)
+
+      q"""{
+        chisel3.debug.DebugMeta.withCtorArgs($paramTree) {
+          chisel3.debug.DebugMeta.record($named, $className, $params)
+        }
+      }"""
+    }
+
     // Method called by the compiler to modify source tree
     override def transform(tree: Tree): Tree = tree match {
       // Check if a subtree is a candidate
       case dd @ ValDef(mods, name, tpt, rhs) if okVal(dd) =>
         val tpe = inferType(tpt)
-        val isData = shouldMatchData(tpe)
-        val isNamedComp = isData || shouldMatchNamedComp(tpe)
+        val isNamedComp = shouldMatchNamedComp(tpe)
         val isPrefixed = isNamedComp || shouldMatchChiselPrefixed(tpe)
+        lazy val isHasIdData = matchHasIdData(tpe)
 
         // If a Data and in a Bundle, just get the name but not a prefix
-        if (isData && inBundle(dd)) {
-          val str = stringFromTermName(name)
-          val newRHS = transform(rhs) // chisel3.withName
-          val named = q"chisel3.withName($str)($newRHS)"
-          treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(named))
+        if (inBundle(dd)) {
+          val named = mkNamed(dd)
+          val wrapped = maybeWrapDebug(dd, tpe, named, isHasIdData)
+          treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
-        // If a Data or a Memory, get the name and a prefix
-        else if (isData || isPrefixed) {
-          val str = stringFromTermName(name)
+        // If a NamedComponent or Prefixed, get the name and a prefix
+        else if (isPrefixed) {
+          val (str, newRHS) = mkTransformed(dd)
           // Starting with '_' signifies a temporary, we ignore it for prefixing because we don't
           // want double "__" in names when the user is just specifying a temporary
           val prefix = if (str.head == '_') str.tail else str
-          val newRHS = transform(rhs)
           val prefixed = q"chisel3.experimental.prefix.apply[$tpt](name=$prefix)(f=$newRHS)"
 
           val named =
@@ -214,13 +329,18 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
               prefixed
             }
 
-          treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(named))
+          val wrapped = maybeWrapDebug(dd, tpe, named, isHasIdData)
+          treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
         }
         // If an instance or module, just get a name but no prefix
-        else if (shouldMatchModule(tpe) || shouldMatchInstance(tpe)) {
-          val str = stringFromTermName(name)
-          val newRHS = transform(rhs)
-          val named = q"chisel3.withName($str)($newRHS)"
+        else if (shouldMatchModule(tpe)) {
+          val named = mkNamed(dd)
+          val wrapped = maybeWrapDebug(dd, tpe, named, guardCheck = true)
+          treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(wrapped))
+        }
+        // If an instance, just get a name but no prefix
+        else if (shouldMatchInstance(tpe)) {
+          val named = mkNamed(dd)
           treeCopy.ValDef(dd, mods, name, tpt, localTyper.typed(named))
         } else {
           // Otherwise, continue
@@ -230,7 +350,7 @@ class ChiselComponent(val global: Global, arguments: ChiselPluginArguments)
         val tpe = inferType(tpt)
         val fieldsOfInterest: List[Boolean] = tpe.typeArgs.map(shouldMatchNamedComp)
         // Only transform if at least one field is of interest
-        if (fieldsOfInterest.reduce(_ || _)) {
+        if (fieldsOfInterest.exists(identity)) {
           findUnapplyNames(rhs) match {
             case Some(names) =>
               val onames: List[String] =
