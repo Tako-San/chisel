@@ -96,52 +96,60 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
 
   private def emitDataMeta(data: Data)(implicit si: SourceInfo): Unit =
     data match {
-      case r: Record => emitRecordMeta(r, parentHandle = None)
-      case v: Vec[_] => emitVecMeta(v, parentHandle = None)
-      case _ => emitLeafMeta(data, parentHandle = None)
+      case r: Record => emitRecordMeta(r, parentFqn = None)
+      case v: Vec[_] => emitVecMeta(v, parentFqn = None)
+      case _ => emitLeafMeta(data, parentFqn = None)
     }
 
   private def emitRecordMeta(
-    r:            Record,
-    parentHandle: Option[Data]
+    r:         Record,
+    parentFqn: Option[String]
   )(implicit si: SourceInfo): Unit = {
     val meta = Builder.getDebugMeta(r)
     val className = extractClassName(r.getClass, meta)
 
-    // Bundle may contain flipped fields -> cannot pass as signal operand.
-    // circt_debug_typenode is the dedicated op for non-passive aggregate structural tokens.
-    val myHandle = IntrinsicExpr(
-      TypeNodeIntrinsic,
-      UInt(0.W),
+    val params = Seq(
       "name" -> StringParam(r.instanceName),
       "className" -> StringParam(className)
-    )(parentHandle.toSeq: _*)
+    ) ++ parentFqn.map("parentFqn" -> StringParam(_))
 
+    Intrinsic(
+      TypeNodeIntrinsic,
+      params: _*
+    )()
+
+    val myFqn = buildFqn(r.instanceName, parentFqn)
     r.elements.foreach { case (_, fdata) =>
       fdata match {
-        case nested: Record => emitRecordMeta(nested, Some(myHandle))
-        case nested: Vec[_] => emitVecMeta(nested, Some(myHandle))
-        case leaf => emitLeafMeta(leaf, Some(myHandle))
+        case nested: Record => emitRecordMeta(nested, Some(myFqn))
+        case nested: Vec[_] => emitVecMeta(nested, Some(myFqn))
+        case leaf => emitLeafMeta(leaf, Some(myFqn))
       }
     }
   }
 
+  private def buildFqn(name: String, parentFqn: Option[String]): String =
+    parentFqn.fold(
+      s"${Builder.currentModule.map(_.name).getOrElse("?")}.${name}"
+    )(p => s"$p.$name")
+
   private def emitVecMeta(
-    v:            Vec[_],
-    parentHandle: Option[Data]
+    v:         Vec[_],
+    parentFqn: Option[String]
   )(implicit si: SourceInfo): Unit = {
-    val meta = Builder.getDebugMeta(v)
+    val myFqn = buildFqn(v.instanceName, parentFqn)
     Intrinsic(
       TypeTagIntrinsic,
       "name" -> StringParam(v.instanceName),
       "className" -> StringParam("Vec"),
-      "vecLength" -> IntParam(BigInt(v.length))
-    )(v +: parentHandle.toSeq: _*)
+      "vecLength" -> IntParam(BigInt(v.length)),
+      "parentFqn" -> StringParam(myFqn)
+    )(v)
   }
 
   private def emitLeafMeta(
-    data:         Data,
-    parentHandle: Option[Data]
+    data:      Data,
+    parentFqn: Option[String]
   )(implicit si: SourceInfo): Unit = {
     if (data.topBindingOpt.isEmpty) return
 
@@ -154,15 +162,18 @@ private[chisel3] object DebugMetaEmitter extends LazyLogging {
         Seq("enumType" -> StringParam(s), "enumTypeFqn" -> StringParam(fqn))
       }
 
+    val fqnParams = parentFqn
+      .map(fqn => "parentFqn" -> StringParam(fqn))
+      .toSeq
+
     val params = Seq(
       "name" -> StringParam(data.instanceName),
       "className" -> StringParam(extractClassName(data.getClass, meta))
     ) ++
       meta.map(_.params).filter(_.nonEmpty).map("params" -> StringParam(_)).toSeq ++
-      enumParams
+      enumParams ++ fqnParams
 
-    val operands: Seq[Data] = Seq(data) ++ parentHandle.toSeq
-    Intrinsic(TypeTagIntrinsic, params: _*)(operands: _*)
+    Intrinsic(TypeTagIntrinsic, params: _*)(data)
   }
 
   private def emitMemMetaTyped[T <: Data](mem: MemBase[T])(implicit si: SourceInfo): Unit = {

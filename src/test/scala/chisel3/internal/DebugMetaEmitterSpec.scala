@@ -783,7 +783,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     typenodeLines.exists(_.contains("AnonymousBundle")) shouldBe true
     // Top-level Vec would emit typenode, but Vec in Bundle uses parent's typenode
     // This test's Vec is nested in Bundle, so no Vec typenode is emitted
-    all(typenodeLines) should include("= intrinsic(circt_debug_typenode")
+    all(typenodeLines) should include("intrinsic(circt_debug_typenode")
 
     // Verify Vec TypeTag is emitted (void form for Vec nested in Bundle)
     val chirrtlTypetagLines = chirrtl.split("\n").filter(_.contains("circt_debug_typetag"))
@@ -802,7 +802,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
       .split("\n")
       .filter(l =>
         l.contains("circt_debug_typetag") && !l.contains("Vec") && !l.contains("className = \"AnonymousBundle\"") && !l
-          .contains("className = \"MyBundle\"") && !l.contains(": UInt<0>)")
+          .contains("className = \"MyBundle\"")
       )
     leafTagLines should not be empty
     (all(leafTagLines) should not).include("= intrinsic(circt_debug_typetag")
@@ -814,7 +814,7 @@ class DebugMetaEmitterSpec extends AnyFlatSpec with Matchers {
     // Bundle -> typenode (dedicated op, no signal operand)
     val typenodeLines = chirrtl.split("\n").filter(_.contains("circt_debug_typenode"))
     typenodeLines should not be empty
-    all(typenodeLines) should include("= intrinsic(circt_debug_typenode")
+    all(typenodeLines) should include("intrinsic(circt_debug_typenode")
 
     // No typetag with Bundle className — Bundle aggregate must not appear in typetag
     val bundleTagLines = chirrtl
