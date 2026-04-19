@@ -15,7 +15,7 @@ import firrtl.EmittedBtor2CircuitAnnotation
   *
   * @note The companion object, [[ChiselStage$]], has a cleaner API for compiling and returning a string.
   */
-class ChiselStage extends Stage {
+class ChiselStage(withDebug: Boolean = false) extends Stage {
 
   override def prerequisites = Seq.empty
   override def optionalPrerequisites = Seq.empty
@@ -29,11 +29,15 @@ class ChiselStage extends Stage {
 
   override def run(annotations: AnnotationSeq): AnnotationSeq = {
 
+    val debugTargets =
+      if (withDebug) Seq(Dependency[chisel3.stage.phases.AddDebugIntrinsics]) else Seq.empty
+
     val pm = new PhaseManager(
       targets = Seq(
         Dependency[chisel3.stage.phases.AddImplicitOutputFile],
         Dependency[chisel3.stage.phases.AddImplicitOutputAnnotationFile],
-        Dependency[chisel3.stage.phases.AddSerializationAnnotations],
+        Dependency[chisel3.stage.phases.AddSerializationAnnotations]
+      ) ++ debugTargets ++ Seq(
         Dependency[chisel3.stage.phases.Convert],
         Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
         Dependency[circt.stage.phases.AddImplicitOutputFile],
@@ -52,14 +56,14 @@ class ChiselStage extends Stage {
 /** Utilities for compiling Chisel */
 object ChiselStage {
 
-  /** A phase shared by all the CIRCT backends */
-  private def phase = new PhaseManager(
+  private def phase(withDebug: Boolean = false) = new PhaseManager(
     Seq(
       Dependency[chisel3.stage.phases.Elaborate],
       Dependency[chisel3.stage.phases.Convert],
       Dependency[chisel3.stage.phases.AddDedupGroupAnnotations],
       Dependency[circt.stage.phases.AddImplicitOutputFile],
-      Dependency[chisel3.stage.phases.AddImplicitOutputAnnotationFile],
+      Dependency[chisel3.stage.phases.AddImplicitOutputAnnotationFile]
+    ) ++ (if (withDebug) Seq(Dependency[chisel3.stage.phases.AddDebugIntrinsics]) else Seq.empty) ++ Seq(
       Dependency[circt.stage.phases.Checks],
       Dependency[circt.stage.phases.CIRCT]
     )
@@ -72,15 +76,16 @@ object ChiselStage {
     * @return     the [[ElaboratedCircuit]]
     */
   def elaborate(
-    gen:  => RawModule,
-    args: Array[String] = Array.empty
+    gen:       => RawModule,
+    args:      Array[String] = Array.empty,
+    withDebug: Boolean = false
   ): ElaboratedCircuit = {
     val annos = Seq(
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.CHIRRTL)
     ) ++ (new Shell("circt")).parse(args)
 
-    phase
+    phase(withDebug)
       .transform(annos)
       .collectFirst { case a: ChiselCircuitAnnotation => a.elaboratedCircuit }
       .get
@@ -88,15 +93,16 @@ object ChiselStage {
 
   /** Elaborate a Chisel circuit into a CHIRRTL string */
   def emitCHIRRTL(
-    gen:  => RawModule,
-    args: Array[String] = Array.empty
+    gen:       => RawModule,
+    args:      Array[String] = Array.empty,
+    withDebug: Boolean = false
   ): String = {
     val annos = Seq(
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.CHIRRTL)
     ) ++ (new Shell("circt")).parse(args)
 
-    val resultAnnos = phase.transform(annos)
+    val resultAnnos = phase(withDebug).transform(annos)
 
     var elaboratedCircuit: Option[ElaboratedCircuit] = None
     val inFileAnnos = resultAnnos.flatMap {
@@ -139,7 +145,7 @@ object ChiselStage {
       CIRCTTargetAnnotation(CIRCTTarget.CHIRRTL)
     ) ++ (new Shell("circt")).parse(args)
 
-    phase
+    phase()
       .transform(annos)
       .collectFirst { case FirrtlCircuitAnnotation(a) =>
         a
@@ -151,14 +157,15 @@ object ChiselStage {
   def emitFIRRTLDialect(
     gen:         => RawModule,
     args:        Array[String] = Array.empty,
-    firtoolOpts: Array[String] = Array.empty
+    firtoolOpts: Array[String] = Array.empty,
+    withDebug:   Boolean = false
   ): String = {
     val annos = Seq(
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.FIRRTL)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
 
-    phase
+    phase(withDebug)
       .transform(annos)
       .collectFirst { case EmittedMLIR(_, a, _) =>
         a
@@ -170,14 +177,15 @@ object ChiselStage {
   def emitHWDialect(
     gen:         => RawModule,
     args:        Array[String] = Array.empty,
-    firtoolOpts: Array[String] = Array.empty
+    firtoolOpts: Array[String] = Array.empty,
+    withDebug:   Boolean = false
   ): String = {
     val annos = Seq(
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.HW)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
 
-    phase
+    phase(withDebug)
       .transform(annos)
       .collectFirst { case EmittedMLIR(_, a, _) =>
         a
@@ -195,13 +203,14 @@ object ChiselStage {
   def emitSystemVerilog(
     gen:         => RawModule,
     args:        Array[String] = Array.empty,
-    firtoolOpts: Array[String] = Array.empty
+    firtoolOpts: Array[String] = Array.empty,
+    withDebug:   Boolean = false
   ): String = {
     val annos = Seq(
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.SystemVerilog)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
-    phase
+    phase(withDebug)
       .transform(annos)
       .collectFirst { case EmittedVerilogCircuitAnnotation(a) =>
         a
@@ -237,13 +246,14 @@ object ChiselStage {
   def emitBtor2(
     gen:         => RawModule,
     args:        Array[String] = Array.empty,
-    firtoolOpts: Array[String] = Array.empty
+    firtoolOpts: Array[String] = Array.empty,
+    withDebug:   Boolean = false
   ): String = {
     val annos = Seq(
       ChiselGeneratorAnnotation(() => gen),
       CIRCTTargetAnnotation(CIRCTTarget.Btor2)
     ) ++ (new Shell("circt")).parse(args) ++ firtoolOpts.map(FirtoolOption(_))
-    phase
+    phase(withDebug)
       .transform(annos)
       .collectFirst { case EmittedBtor2CircuitAnnotation(a) =>
         a
