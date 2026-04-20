@@ -9,7 +9,7 @@ import chisel3.internal._
 import chisel3.internal.binding._
 import chisel3.internal.firrtl.ir._
 import chisel3.debug.CtorParamExtractor.{dataToTypeName, getCtorParams}
-import chisel3.experimental.{BaseModule, SourceInfo, UnlocatableSourceInfo}
+import chisel3.experimental.{BaseModule, SourceInfo}
 
 import scala.collection.mutable
 import upickle.{default => json}
@@ -17,11 +17,11 @@ import upickle.{default => json}
 private[chisel3] object DebugIntrinsics {
 
   def generate(circuit: Circuit): Unit = {
-    val emitter = new ComponentDebugEmitter()(UnlocatableSourceInfo)
+    val emitter = new ComponentDebugEmitter
     circuit.components.foreach(emitter.generate)
   }
 
-  private class ComponentDebugEmitter(implicit val si: SourceInfo) extends LazyLogging {
+  private class ComponentDebugEmitter extends LazyLogging {
     private val emittedEnums = mutable.HashSet.empty[String]
     private val emittedIds = mutable.HashSet.empty[HasId]
 
@@ -37,27 +37,27 @@ private[chisel3] object DebugIntrinsics {
     }
 
     private def processModule(id: BaseModule, allPorts: Seq[Port], block: Block): Unit = {
-      createIntrinsic(id).foreach(block.addSecretCommand)
-      allPorts.foreach { p => createIntrinsic(p.id, None).foreach(block.addSecretCommand) }
+      createIntrinsic(id, id._getSourceLocator).foreach(block.addSecretCommand)
+      allPorts.foreach { p => createIntrinsic(p.id, None, p.sourceInfo).foreach(block.addSecretCommand) }
       // Only regular commands are traversed; secret commands are intrinsics already added by this pass.
       block.getCommands().foreach { c => generate(c).foreach(block.addSecretCommand) }
     }
 
     private def generate(cmd: Command): Seq[Command] = cmd match {
       case e: DefPrim[_] =>
-        createIntrinsic(e.id, None)
-      case DefWire(_, id) =>
-        createIntrinsic(id, None)
-      case DefReg(_, id, _) =>
-        createIntrinsic(id, None)
-      case DefRegInit(_, id, _, _, _) =>
-        createIntrinsic(id, None)
-      case DefMemory(_, id, t, size) =>
-        createIntrinsicMem(id, t, size)
-      case DefSeqMemory(_, id, t, size, _) =>
-        createIntrinsicMem(id, t, size)
-      case FirrtlMemory(_, id, t, size, _, _, _, _, _) =>
-        createIntrinsicMem(id, t, size)
+        createIntrinsic(e.id, None, e.sourceInfo)
+      case DefWire(si, id) =>
+        createIntrinsic(id, None, si)
+      case DefReg(si, id, _) =>
+        createIntrinsic(id, None, si)
+      case DefRegInit(si, id, _, _, _) =>
+        createIntrinsic(id, None, si)
+      case DefMemory(si, id, t, size) =>
+        createIntrinsicMem(id, t, size, si)
+      case DefSeqMemory(si, id, t, size, _) =>
+        createIntrinsicMem(id, t, size, si)
+      case FirrtlMemory(si, id, t, size, _, _, _, _, _) =>
+        createIntrinsicMem(id, t, size, si)
       case DefMemPort(_, _, _, _, _, _) =>
         Seq.empty
       case When(_, _, ifRegion, elseRegion) =>
@@ -74,7 +74,8 @@ private[chisel3] object DebugIntrinsics {
     private def createIntrinsicMem(
       target:    HasId,
       innerType: Data,
-      size:      BigInt
+      size:      BigInt,
+      si:        SourceInfo
     ): Seq[Command] = {
       val binding = target.getClass.getSimpleName
       val typeName = s"$binding[${dataToTypeName(innerType)}[$size]]"
@@ -99,31 +100,31 @@ private[chisel3] object DebugIntrinsics {
       )
     }
 
-    private def createIntrinsic(target: Data, parent: Option[String]): Seq[Command] = {
+    private def createIntrinsic(target: Data, parent: Option[String], si: SourceInfo): Seq[Command] = {
       if (!emittedIds.add(target)) return Seq.empty
 
       val typeName = dataToTypeName(target)
 
       val childCmds: Seq[Command] = target match {
         case record: Record =>
-          record.elements.values.flatMap(createIntrinsic(_, Some(signalName(target)))).toSeq
+          record.elements.values.flatMap(createIntrinsic(_, Some(signalName(target)), si)).toSeq
         case vecLike: VecLike[_] =>
-          vecLike.toSeq.flatMap(e => createIntrinsic(e.asInstanceOf[Data], Some(signalName(target))))
+          vecLike.toSeq.flatMap(e => createIntrinsic(e.asInstanceOf[Data], Some(signalName(target)), si))
         case _ => Seq.empty
       }
 
       val enumDefCmd: Seq[Command] = target match {
-        case e: EnumType => createEnumDefIntrinsic(e).toSeq
+        case e: EnumType => createEnumDefIntrinsic(e, si).toSeq
         case _ => Seq.empty
       }
 
-      enumDefCmd ++ childCmds ++ createDebugIntrinsic(target, typeName, parent, extractParams(target)).toSeq
+      enumDefCmd ++ childCmds ++ createDebugIntrinsic(target, typeName, parent, extractParams(target), si).toSeq
     }
 
     private case class EnumVariant(name: String, value: String)
     private implicit val enumVariantRW: json.ReadWriter[EnumVariant] = json.macroRW
 
-    private def createEnumDefIntrinsic(e: EnumType): Option[Command] = {
+    private def createEnumDefIntrinsic(e: EnumType, si: SourceInfo): Option[Command] = {
       val factory = e.factory
       val fqn = factory.enumTypeName.stripSuffix("$")
       val simpleTypeName = fqn.split("\\.").last
@@ -134,7 +135,7 @@ private[chisel3] object DebugIntrinsics {
 
       Some(
         DefIntrinsic(
-          UnlocatableSourceInfo,
+          si,
           "circt_debug_enumdef",
           Nil,
           Seq(
@@ -146,11 +147,11 @@ private[chisel3] object DebugIntrinsics {
       )
     }
 
-    private def createIntrinsic(target: BaseModule): Seq[Command] = {
+    private def createIntrinsic(target: BaseModule, si: SourceInfo): Seq[Command] = {
       val params = getCtorParams(target)
       Seq(
         DefIntrinsic(
-          UnlocatableSourceInfo,
+          si,
           "circt_debug_moduleinfo",
           Nil,
           Seq(
@@ -161,9 +162,9 @@ private[chisel3] object DebugIntrinsics {
       )
     }
 
-    private def createIntrinsic(target: HasId, parent: Option[String]): Seq[Command] = target match {
-      case t: Data           => createIntrinsic(t, parent)
-      case t: BaseModule     => createIntrinsic(t)
+    private def createIntrinsic(target: HasId, parent: Option[String], si: SourceInfo): Seq[Command] = target match {
+      case t: Data           => createIntrinsic(t, parent, si)
+      case t: BaseModule     => createIntrinsic(t, si)
       case _: NamedComponent => Seq.empty
       case t =>
         logger.warn(s"createIntrinsic: unhandled HasId type: ${t.getClass.getName}")
@@ -174,7 +175,8 @@ private[chisel3] object DebugIntrinsics {
       target:   Data,
       typeName: String,
       parent:   Option[String],
-      params:   Seq[ClassParam]
+      params:   Seq[ClassParam],
+      si:       SourceInfo
     ): Option[Command] = {
       val name = signalRef(target)
       if (name.isEmpty) return None
@@ -199,7 +201,7 @@ private[chisel3] object DebugIntrinsics {
       val parentParam: Seq[(String, Param)] = parent.map("parent" -> StringParam(_)).toSeq
       Some(
         DefIntrinsic(
-          UnlocatableSourceInfo,
+          si,
           intrinsicName,
           ssaOperands,
           Seq(
