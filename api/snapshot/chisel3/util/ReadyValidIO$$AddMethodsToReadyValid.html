@@ -19,11 +19,11 @@ digraph G {
 }
   subgraph clusterIncoming {
   style = "invis"
-  node4 [URL="IrrevocableIO.html#inheritance-diagram-container", label="IrrevocableIO[T]", id="graph1_4", class="implicit-incoming class", tooltip="chisel3.util.IrrevocableIO can be implicitly converted to AddMethodsToReadyValid[T] by the implicit method AddMethodsToReadyValid in object chisel3.util.ReadyValidIO"] ;node3 [URL="ReadyValidIO.html#inheritance-diagram-container", label="ReadyValidIO[T]", id="graph1_3", class="implicit-incoming class", tooltip="chisel3.util.ReadyValidIO can be implicitly converted to AddMethodsToReadyValid[T] by the implicit method AddMethodsToReadyValid in object chisel3.util.ReadyValidIO"] ;node2 [URL="DecoupledIO.html#inheritance-diagram-container", label="DecoupledIO[T]", id="graph1_2", class="implicit-incoming class", tooltip="chisel3.util.DecoupledIO can be implicitly converted to AddMethodsToReadyValid[T] by the implicit method AddMethodsToReadyValid in object chisel3.util.ReadyValidIO"] ;
+  node4 [URL="DecoupledIO.html#inheritance-diagram-container", label="DecoupledIO[T]", id="graph1_4", class="implicit-incoming class", tooltip="chisel3.util.DecoupledIO can be implicitly converted to AddMethodsToReadyValid[T] by the implicit method AddMethodsToReadyValid in object chisel3.util.ReadyValidIO"] ;node3 [URL="ReadyValidIO.html#inheritance-diagram-container", label="ReadyValidIO[T]", id="graph1_3", class="implicit-incoming class", tooltip="chisel3.util.ReadyValidIO can be implicitly converted to AddMethodsToReadyValid[T] by the implicit method AddMethodsToReadyValid in object chisel3.util.ReadyValidIO"] ;node2 [URL="IrrevocableIO.html#inheritance-diagram-container", label="IrrevocableIO[T]", id="graph1_2", class="implicit-incoming class", tooltip="chisel3.util.IrrevocableIO can be implicitly converted to AddMethodsToReadyValid[T] by the implicit method AddMethodsToReadyValid in object chisel3.util.ReadyValidIO"] ;
   node2 -> node3 -> node4[constraint="false", style="invis", minlen="0.0"];
 
                }
-  node4 -> node0[label="implicitly", id="4_0", minlen="2", ltail="clusterIncoming", lhead="clusterThis", constraint="false", class="implicit-incoming", tooltip="DecoupledIO[T], ReadyValidIO[T], IrrevocableIO[T] can be implicitly converted to AddMethodsToReadyValid[T]"]
+  node4 -> node0[label="implicitly", id="4_0", minlen="2", ltail="clusterIncoming", lhead="clusterThis", constraint="false", class="implicit-incoming", tooltip="IrrevocableIO[T], ReadyValidIO[T], DecoupledIO[T] can be implicitly converted to AddMethodsToReadyValid[T]"]
   
 }
   
